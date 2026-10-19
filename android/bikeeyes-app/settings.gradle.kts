@@ -17,5 +17,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Wheelmate"
+rootProject.name = "BikeEyes"
 include(":app")

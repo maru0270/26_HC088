@@ -71,7 +71,7 @@ import math
 from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
 
-app = FastAPI(title="Bike Road Risk Server")
+app = FastAPI(title="BikeEyes Server")
 logger = configure_operational_logging()
 app.mount(
     "/demo-monitor-static",
@@ -2608,7 +2608,7 @@ def delete_account(body: AccountDeleteRequest, request: Request):
 def health_check():
     return {
         "status": "ok",
-        "message": "Bike Road Risk Server is running"
+        "message": "BikeEyes Server is running"
     }
 
 

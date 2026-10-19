@@ -22,14 +22,14 @@
 **/.ai-runtime/
 
 # Server runtime uploads
-server/bike-road-risk-server/uploads/
-server/bike-road-risk-server/backups/
-server/bike-road-risk-server/logs/
-server/bike-road-risk-server/artifacts/
-server/bike-road-risk-server/models/**/*.pt
-server/bike-road-risk-server/models/**/*.onnx
-server/bike-road-risk-server/models/**/*.engine
-server/bike-road-risk-server/*_backup_*.json
+server/bikeeyes-server/uploads/
+server/bikeeyes-server/backups/
+server/bikeeyes-server/logs/
+server/bikeeyes-server/artifacts/
+server/bikeeyes-server/models/**/*.pt
+server/bikeeyes-server/models/**/*.onnx
+server/bikeeyes-server/models/**/*.engine
+server/bikeeyes-server/*_backup_*.json
 
 # Local tooling, temporary files, and generated deliverables
 node_modules/
