@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BikeEyes 실시간 데이터 처리 현황</title>
+  <link rel="stylesheet" href="/demo-monitor-static/monitor.css?v=20260824-6">
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <p class="eyebrow">BIKEEYES LIVE SYSTEM</p>
+        <h1>실시간 데이터 처리 및 저장 현황</h1>
+        <p class="subtitle">휴대폰 수집부터 AI 분석과 PostgreSQL 저장까지</p>
+      </div>
+      <div class="clock" id="clock">--:--:--</div>
+    </header>
+
+    <section class="health" id="health"></section>
+
+    <section class="grid">
+      <article class="panel events-panel">
+        <div class="panel-title">
+          <h2>실시간 처리 과정</h2>
+          <div class="event-tools">
+            <b id="event-count">누적 0건</b>
+            <span class="live-dot">LIVE</span>
+          </div>
+        </div>
+        <div id="events" class="events">
+          <div class="empty">처리 이벤트를 기다리고 있습니다.</div>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-title">
+          <h2>현재 주행 저장 현황</h2>
+          <span id="ride-id" class="ride-id">주행 대기</span>
+        </div>
+        <div id="stats" class="stats"></div>
+      </article>
+    </section>
+
+    <section class="pipeline panel">
+      <h2>데이터 처리 단계</h2>
+      <div class="steps" id="pipeline"></div>
+    </section>
+
+    <footer>
+      <span>오류 상세와 개인정보는 이 화면에 표시하지 않습니다.</span>
+      <span id="updated-at">갱신 대기</span>
+    </footer>
+  </main>
+  <script src="/demo-monitor-static/monitor.js?v=20260824-6"></script>
+</body>
+</html>

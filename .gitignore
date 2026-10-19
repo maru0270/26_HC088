@@ -1,0 +1,55 @@
+# Android/Gradle generated files
+**/.gradle/
+**/build/
+**/*.hprof
+**/.DS_Store
+**/local.properties
+**/.env
+!**/.env.example
+
+# Android Studio local state
+**/.idea/
+**/.idea/workspace.xml
+**/.idea/caches/
+
+# Python generated files and local environments
+**/__pycache__/
+**/*.py[cod]
+**/.venv/
+**/venv/
+.codex-temp/
+.github-upload-staging/
+**/.ai-runtime/
+
+# Server runtime uploads
+server/bike-road-risk-server/uploads/
+server/bike-road-risk-server/backups/
+server/bike-road-risk-server/logs/
+server/bike-road-risk-server/artifacts/
+server/bike-road-risk-server/models/**/*.pt
+server/bike-road-risk-server/models/**/*.onnx
+server/bike-road-risk-server/models/**/*.engine
+server/bike-road-risk-server/*_backup_*.json
+
+# Local tooling, temporary files, and generated deliverables
+node_modules/
+tmp/
+.tmp/
+.pytest_cache/
+artifacts/
+outputs/
+poster_ppt_build/
+threshold_render/
+inspect_*
+metadata_*
+*.inspect.ndjson
+*.apk
+*.aab
+
+# Presentation and document working files are maintained outside the source repository.
+*.pptx
+*.docx
+BikeEyes*.jpg
+BikeEyes*.png
+android/wheelmate_share/bikeeyes-*.png
+android/wheelmate_share/bikeeyes-window.xml

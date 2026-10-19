@@ -1,0 +1,3 @@
+# Copy this file to local.properties and keep the real value out of Git.
+# Android Studio also writes sdk.dir to local.properties on each developer PC.
+KAKAO_NATIVE_APP_KEY=
