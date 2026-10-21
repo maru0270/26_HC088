@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +17,7 @@ logger = logging.getLogger("bikeeyes.demo_monitor")
 STATIC_DIR = Path(__file__).resolve().parent / "static" / "demo-monitor"
 DEMO_MONITOR_ENABLED = os.getenv("BIKE_DEMO_MONITOR_ENABLED", "true").lower() == "true"
 DEMO_MONITOR_ALLOW_REMOTE = os.getenv("BIKE_DEMO_MONITOR_ALLOW_REMOTE", "false").lower() == "true"
+TAILSCALE_CGNAT_NETWORK = ip_network("100.64.0.0/10")
 
 CATEGORY_LABELS = {
     "AUTH": "계정",
@@ -53,7 +54,11 @@ def require_demo_access(request: Request) -> None:
         address = ip_address(host)
     except ValueError:
         raise HTTPException(status_code=403, detail="local network access only")
-    if not (address.is_loopback or address.is_private):
+    if not (
+        address.is_loopback
+        or address.is_private
+        or address in TAILSCALE_CGNAT_NETWORK
+    ):
         raise HTTPException(status_code=403, detail="local network access only")
 
 
