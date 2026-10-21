@@ -47,7 +47,8 @@ import com.bikeeyes.app.ui.theme.BikeEyesGreen
 @Composable
 fun AdminDashboardScreen(
     onUsersClick: () -> Unit,
-    onRecordsClick: () -> Unit,
+    onRidesClick: () -> Unit,
+    onAccidentsClick: () -> Unit,
     onRoadAnomalyZonesClick: () -> Unit,
     onHazardZonesClick: () -> Unit,
     onReviewItemsClick: () -> Unit,
@@ -222,16 +223,17 @@ fun AdminDashboardScreen(
         }
 
         Text("관리 메뉴", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        AdminMenuCard("사용자 관리", "계정, 기기, 주행 및 수집 현황 조회", onUsersClick)
-        AdminMenuCard("주행·노면·사고 기록", "수집 데이터와 사고 이벤트 상세 확인", onRecordsClick)
+        AdminMenuCard("사용자 관리", "계정·등록 기기와 사용자별 주행·데이터 동기화 현황 조회", onUsersClick)
+        AdminMenuCard("주행 기록 조회", "주행 시간·거리와 이미지·센서·사고 데이터의 수집 및 동기화 상태 확인", onRidesClick)
+        AdminMenuCard("사고 기록 조회", "단말 센서 기반 사고 의심 이벤트와 사용자 응답·블랙박스 근거 확인", onAccidentsClick)
         AdminMenuCard(
             "노면이상 구간 관리",
-            "AI 판독 기반 노면이상 후보·확정 상태와 수집 근거 확인",
+            "유효 AI 판독과 GPS 위치 근거로 생성된 노면이상 후보·확정 구간 관리",
             onRoadAnomalyZonesClick
         )
-        AdminMenuCard("위험구간 관리", "후보·확정·제외 처리 및 근거 확인", onHazardZonesClick)
-        AdminMenuCard("재검토 항목 관리", "AI 미탐지 의심 이미지와 센서 근거를 검토합니다.", onReviewItemsClick)
-        AdminMenuCard("시스템 로그·운영 진단", "동기화, 보관 정책, 오류 및 감사 로그", onSystemClick)
+        AdminMenuCard("위험구간 관리", "AI 판독과 Peak 충격·GPS 속도 조건을 함께 충족한 위험구간 후보 관리", onHazardZonesClick)
+        AdminMenuCard("재검토 항목 관리", "AI 미탐지 이미지 중 센서·GPS 조건을 충족한 관리자 재검토 항목 처리", onReviewItemsClick)
+        AdminMenuCard("시스템 로그·운영 진단", "서버·DB·이미지 저장소 상태와 동기화·보관·감사 로그 점검", onSystemClick)
     }
 }
 

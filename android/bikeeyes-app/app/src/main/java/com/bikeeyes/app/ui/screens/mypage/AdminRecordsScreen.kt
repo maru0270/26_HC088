@@ -16,8 +16,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +42,7 @@ import com.bikeeyes.app.AuthRepository
 import com.bikeeyes.app.UserSettingsStore
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlin.math.sqrt
@@ -55,6 +59,11 @@ fun AdminRecordsScreen(
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("ALL") }
+    var selectedYear by remember { mutableStateOf<Int?>(null) }
+    var selectedMonth by remember { mutableStateOf<Int?>(null) }
+    var showMonthPicker by remember { mutableStateOf(false) }
+    var draftYear by remember { mutableIntStateOf(Calendar.getInstance().get(Calendar.YEAR)) }
+    var draftMonth by remember { mutableIntStateOf(Calendar.getInstance().get(Calendar.MONTH) + 1) }
     var rides by remember { mutableStateOf<List<AdminRideItem>>(emptyList()) }
     var total by remember { mutableIntStateOf(0) }
     var detail by remember { mutableStateOf<AdminRideDetailResponse?>(null) }
@@ -71,7 +80,7 @@ fun AdminRecordsScreen(
         }
         loading = true
         error = null
-        runCatching { repository.adminRides(query, status) }
+        runCatching { repository.adminRides(query, status, selectedYear, selectedMonth) }
             .onSuccess {
                 rides = it.items
                 total = it.total
@@ -100,6 +109,20 @@ fun AdminRecordsScreen(
             label = { Text("이메일·닉네임 검색") },
             singleLine = true
         )
+        OutlinedButton(
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !loading && profile.role == "ADMIN",
+            onClick = {
+                draftYear = selectedYear ?: Calendar.getInstance().get(Calendar.YEAR)
+                draftMonth = selectedMonth ?: Calendar.getInstance().get(Calendar.MONTH) + 1
+                showMonthPicker = true
+            }
+        ) {
+            Text(
+                if (selectedYear == null || selectedMonth == null) "달력 · 전체 기간"
+                else "달력 · ${selectedYear}년 ${selectedMonth}월"
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(5.dp)
@@ -185,6 +208,64 @@ fun AdminRecordsScreen(
                 contentScale = ContentScale.Fit
             )
         }
+    }
+
+    if (showMonthPicker) {
+        AlertDialog(
+            onDismissRequest = { showMonthPicker = false },
+            title = { Text("조회할 연·월 선택") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        TextButton(onClick = { draftYear-- }) { Text("‹ 이전") }
+                        Text("${draftYear}년", fontWeight = FontWeight.Bold)
+                        TextButton(onClick = { draftYear++ }) { Text("다음 ›") }
+                    }
+                    (1..12).chunked(3).forEach { months ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            months.forEach { month ->
+                                Button(
+                                    modifier = Modifier.weight(1f),
+                                    enabled = draftMonth != month,
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 7.dp),
+                                    onClick = { draftMonth = month }
+                                ) {
+                                    Text("${month}월")
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = {
+                    selectedYear = draftYear
+                    selectedMonth = draftMonth
+                    detail = null
+                    showMonthPicker = false
+                    refreshKey++
+                }) { Text("적용") }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        selectedYear = null
+                        selectedMonth = null
+                        detail = null
+                        showMonthPicker = false
+                        refreshKey++
+                    }) { Text("전체 기간") }
+                    TextButton(onClick = { showMonthPicker = false }) { Text("취소") }
+                }
+            }
+        )
     }
 }
 

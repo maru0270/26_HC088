@@ -160,8 +160,15 @@ class AuthRepository(context: Context) {
 
     suspend fun adminRides(
         query: String = "",
-        status: String = "ALL"
-    ): AdminRideListResponse = api.adminRides(query = query, status = status)
+        status: String = "ALL",
+        year: Int? = null,
+        month: Int? = null
+    ): AdminRideListResponse = api.adminRides(
+        query = query,
+        status = status,
+        year = year,
+        month = month
+    )
 
     suspend fun adminRideDetail(rideSessionId: String): AdminRideDetailResponse =
         api.adminRideDetail(rideSessionId)

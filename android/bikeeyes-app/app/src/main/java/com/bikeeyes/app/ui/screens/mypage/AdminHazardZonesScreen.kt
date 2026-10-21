@@ -161,7 +161,7 @@ private fun AdminZoneAnalysisScreen(
         pendingMarkerScrollZoneId = null
     }
 
-    fun loadDetail(zoneId: String, revealDetail: Boolean = false) {
+    fun loadDetail(zoneId: String, revealDetail: Boolean = true) {
         val requestGeneration = detailRequestGeneration + 1
         detailRequestGeneration = requestGeneration
         selectedZoneId = zoneId
@@ -199,7 +199,7 @@ private fun AdminZoneAnalysisScreen(
         }
     }
 
-    fun selectZone(zoneId: String, revealDetail: Boolean = false) {
+    fun selectZone(zoneId: String, revealDetail: Boolean = true) {
         val matchingIndex = zones.indexOfFirst { it.zone_id == zoneId }
         if (matchingIndex >= 0) zoneIndex = matchingIndex
         loadDetail(zoneId, revealDetail)
@@ -334,6 +334,25 @@ private fun AdminZoneAnalysisScreen(
                 }
             }
         )
+        Text("분석 조건 검색", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("제목·파손 유형·설명 검색") },
+            singleLine = true
+        )
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !loading && profile.role == "ADMIN",
+            onClick = {
+                preferredZoneIdAfterRefresh = null
+                clearZoneSelection()
+                refreshKey++
+            }
+        ) {
+            Text("${zoneLabel} 검색")
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(14.dp)
@@ -358,7 +377,6 @@ private fun AdminZoneAnalysisScreen(
                 )
             },
             onMarkerClick = { zoneId ->
-                pendingMarkerScrollZoneId = zoneId
                 selectZone(zoneId)
             }
         )
@@ -368,50 +386,52 @@ private fun AdminZoneAnalysisScreen(
                 style = MaterialTheme.typography.bodySmall
             )
         }
-        Text("분석 조건 검색", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-//        Text(
-//            "Mock 데이터는 실제 위험 안내와 통계에서 기본 제외됩니다.",
-//            style = MaterialTheme.typography.bodySmall
-//        )
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("제목·파손 유형·설명 검색") },
-            singleLine = true
-        )
-//        Row(
-//            modifier = Modifier.fillMaxWidth(),
-//            horizontalArrangement = Arrangement.SpaceBetween
-//        )
-//        {
-//            Column {
-//                Text("Mock 데이터 포함", fontWeight = FontWeight.SemiBold)
-//                Text("끄면 실제 데이터만 조회", style = MaterialTheme.typography.bodySmall)
-//            }
-//            Switch(
-//                checked = includeTestData,
-//                onCheckedChange = {
-//                    includeTestData = it
-//                    selected = null
-//                    refreshKey++
-//                }
-//            )
-//        }
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !loading && profile.role == "ADMIN",
-            onClick = {
-                preferredZoneIdAfterRefresh = null
-                clearZoneSelection()
-                refreshKey++
-            }
-        ) {
-            Text("${zoneLabel} 검색")
-        }
         if (loading) CircularProgressIndicator()
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Text("검색 결과 ${total}건", fontWeight = FontWeight.Bold)
+
+        selected
+            ?.takeIf { detail -> zones.any { zone -> zone.zone_id == detail.zone.zone_id } }
+            ?.let { detail ->
+                SelectedZoneContextCard(detail, zoneLabel, evidenceIndex)
+                HazardAdminDetail(
+                    detail = detail,
+                    zoneLabel = zoneLabel,
+                    showZoneDetail = false,
+                    showEvidence = true,
+                    evidenceIndex = evidenceIndex,
+                    onEvidencePrevious = {
+                        if (detail.evidence.isNotEmpty()) {
+                            evidenceIndex = if (evidenceIndex == 0) detail.evidence.lastIndex else evidenceIndex - 1
+                            val evidence = detail.evidence[evidenceIndex]
+                            imageRequestGeneration++
+                            selectedImageEventUuid = null
+                            selectedImage = null
+                            imageError = null
+                            imageLoading = false
+                            evidence.event_uuid?.takeIf { evidence.has_image }?.let(::loadEvidenceImage)
+                        }
+                    },
+                    onEvidenceNext = {
+                        if (detail.evidence.isNotEmpty()) {
+                            evidenceIndex = if (evidenceIndex == detail.evidence.lastIndex) 0 else evidenceIndex + 1
+                            val evidence = detail.evidence[evidenceIndex]
+                            imageRequestGeneration++
+                            selectedImageEventUuid = null
+                            selectedImage = null
+                            imageError = null
+                            imageLoading = false
+                            evidence.event_uuid?.takeIf { evidence.has_image }?.let(::loadEvidenceImage)
+                        }
+                    },
+                    onStatusClick = { pendingStatus = it },
+                    selectedImageEventUuid = selectedImageEventUuid,
+                    selectedImage = selectedImage,
+                    imageLoading = imageLoading,
+                    imageError = imageError,
+                    onImageClick = ::loadEvidenceImage
+                )
+            }
 
         Text(
             when (status) {
@@ -456,6 +476,7 @@ private fun AdminZoneAnalysisScreen(
                 detail = detail,
                 zoneLabel = zoneLabel,
                 showZoneDetail = showZoneDetail,
+                showEvidence = false,
                 evidenceIndex = evidenceIndex,
                 onEvidencePrevious = {
                     if (detail.evidence.isNotEmpty()) {
@@ -594,10 +615,37 @@ private fun HazardAdminCard(zone: AdminHazardZoneItem, onClick: () -> Unit) {
 }
 
 @Composable
+private fun SelectedZoneContextCard(
+    detail: AdminHazardZoneDetailResponse,
+    zoneLabel: String,
+    evidenceIndex: Int
+) {
+    val zone = detail.zone
+    Card(Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text("선택한 $zoneLabel", style = MaterialTheme.typography.labelLarge)
+            Text(
+                "${zone.title} · ${hazardStatusText(zone.status)}",
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "${damageTypeText(zone.road_damage_type)} · 위험도 ${severityText(zone.severity)} · " +
+                    "근거 ${evidenceIndex.coerceAtLeast(0) + 1}/${detail.evidence.size}",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
 private fun HazardAdminDetail(
     detail: AdminHazardZoneDetailResponse,
     zoneLabel: String,
     showZoneDetail: Boolean,
+    showEvidence: Boolean,
     evidenceIndex: Int,
     onEvidencePrevious: () -> Unit,
     onEvidenceNext: () -> Unit,
@@ -684,6 +732,7 @@ private fun HazardAdminDetail(
             }
         }
     }
+    if (!showEvidence) return
     Text(
         "근거 노면 수집 기록 ${detail.evidence.size}건",
         style = MaterialTheme.typography.titleMedium,

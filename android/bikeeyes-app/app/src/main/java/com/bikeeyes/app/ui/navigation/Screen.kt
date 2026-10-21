@@ -52,12 +52,10 @@ sealed class Screen(
     data object AdminDiagnostics : Screen("admin_diagnostics", "관리자 진단")
     data object AdminUsers : Screen("admin_users", "관리자 사용자 관리")
     data object AdminSystem : Screen("admin_system", "관리자 시스템 진단")
-    data object AdminRecords : Screen("admin_records", "관리자 기록 관리")
     data object AdminRides : Screen("admin_rides", "관리자 주행 기록")
     data object AdminRideDetail : Screen("admin_ride_detail/{sessionId}", "관리자 주행 상세") {
         fun createRoute(sessionId: String) = "admin_ride_detail/$sessionId"
     }
-    data object AdminRoadRecords : Screen("admin_road_records", "관리자 위험 감지 기록")
     data object AdminAccidents : Screen("admin_accidents", "관리자 사고 기록")
     data object AdminAccidentDetail : Screen(
         "admin_accident_detail/{sessionId}/{responseFilter}?eventUuid={eventUuid}", "사고 감지 기록 상세"

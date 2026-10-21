@@ -39,8 +39,6 @@ import com.bikeeyes.app.ui.screens.mypage.AdminUsersScreen
 import com.bikeeyes.app.ui.screens.mypage.AdminSystemScreen
 import com.bikeeyes.app.ui.screens.mypage.AdminRecordsScreen
 import com.bikeeyes.app.ui.screens.mypage.AdminRideDetailScreen
-import com.bikeeyes.app.ui.screens.mypage.AdminRecordsHubScreen
-import com.bikeeyes.app.ui.screens.mypage.AdminRoadRecordsScreen
 import com.bikeeyes.app.ui.screens.mypage.AdminAccidentsScreen
 import com.bikeeyes.app.ui.screens.mypage.AdminAccidentDetailScreen
 import com.bikeeyes.app.ui.screens.mypage.AdminHazardZonesScreen
@@ -280,7 +278,8 @@ fun BikeEyesNavigationGraph(
         composable(Screen.AdminDiagnostics.route) {
             AdminDashboardScreen(
                 onUsersClick = { navController.navigate(Screen.AdminUsers.route) },
-                onRecordsClick = { navController.navigate(Screen.AdminRecords.route) },
+                onRidesClick = { navController.navigate(Screen.AdminRides.route) },
+                onAccidentsClick = { navController.navigate(Screen.AdminAccidents.route) },
                 onRoadAnomalyZonesClick = {
                     navController.navigate(Screen.AdminRoadAnomalyZones.route)
                 },
@@ -306,20 +305,6 @@ fun BikeEyesNavigationGraph(
         }
         composable(Screen.AdminSystem.route) {
             AdminSystemScreen(
-                onBack = { navController.popBackStack() },
-                onDashboard = {
-                    navController.navigate(Screen.AdminDiagnostics.route) {
-                        popUpTo(Screen.AdminDiagnostics.route) { inclusive = false }
-                        launchSingleTop = true
-                    }
-                }
-            )
-        }
-        composable(Screen.AdminRecords.route) {
-            AdminRecordsHubScreen(
-                onRidesClick = { navController.navigate(Screen.AdminRides.route) },
-                onRoadRecordsClick = { navController.navigate(Screen.AdminRoadRecords.route) },
-                onAccidentsClick = { navController.navigate(Screen.AdminAccidents.route) },
                 onBack = { navController.popBackStack() },
                 onDashboard = {
                     navController.navigate(Screen.AdminDiagnostics.route) {
@@ -355,20 +340,6 @@ fun BikeEyesNavigationGraph(
                             eventUuid = eventUuid
                         )
                     )
-                },
-                onBack = { navController.popBackStack() },
-                onDashboard = {
-                    navController.navigate(Screen.AdminDiagnostics.route) {
-                        popUpTo(Screen.AdminDiagnostics.route) { inclusive = false }
-                        launchSingleTop = true
-                    }
-                }
-            )
-        }
-        composable(Screen.AdminRoadRecords.route) {
-            AdminRoadRecordsScreen(
-                onRideClick = { sessionId ->
-                    navController.navigate(Screen.AdminRideDetail.createRoute(sessionId))
                 },
                 onBack = { navController.popBackStack() },
                 onDashboard = {

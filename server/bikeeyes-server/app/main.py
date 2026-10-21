@@ -69,6 +69,7 @@ import json
 import httpx2
 import math
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from contextlib import contextmanager
 
 app = FastAPI(title="BikeEyes Server")
@@ -3954,6 +3955,8 @@ def admin_rides(
     request: Request,
     q: str = Query(default="", max_length=100),
     status: str = Query(default="ALL"),
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
@@ -3961,6 +3964,21 @@ def admin_rides(
     normalized_status = status.upper()
     if normalized_status not in {"ALL", "COMPLETE", "INCOMPLETE", "DELETED"}:
         raise HTTPException(status_code=422, detail="unsupported ride status")
+    if (year is None) != (month is None):
+        raise HTTPException(status_code=422, detail="year and month must be provided together")
+
+    period_filter = ""
+    period_params: tuple[int, int] = ()
+    if year is not None and month is not None:
+        kst = ZoneInfo("Asia/Seoul")
+        period_start = datetime(year, month, 1, tzinfo=kst)
+        next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
+        period_end = datetime(next_year, next_month, 1, tzinfo=kst)
+        period_filter = "AND r.ended_at >= %s AND r.ended_at < %s"
+        period_params = (
+            int(period_start.timestamp() * 1000),
+            int(period_end.timestamp() * 1000),
+        )
     search = f"%{q.strip()}%"
     status_filter = {
         "ALL": "",
@@ -3984,6 +4002,7 @@ def admin_rides(
         WHERE (%s='' OR r.ride_session_id ILIKE %s OR u.email ILIKE %s
                OR u.nickname ILIKE %s)
           {status_filter}
+          {period_filter}
     """
     with db_transaction() as cur:
         cur.execute(
@@ -4005,7 +4024,7 @@ def admin_rides(
             ORDER BY r.ended_at DESC
             LIMIT %s OFFSET %s
             """,
-            (q.strip(), search, search, search, limit, offset),
+            (q.strip(), search, search, search, *period_params, limit, offset),
         )
         rows = cur.fetchall()
         cur.execute(
@@ -4015,7 +4034,7 @@ def admin_rides(
             LEFT JOIN users u ON u.user_id=r.user_id
             {base_where}
             """,
-            (q.strip(), search, search, search),
+            (q.strip(), search, search, search, *period_params),
         )
         total = cur.fetchone()[0]
         audit(
@@ -4024,7 +4043,7 @@ def admin_rides(
             "ADMIN_RIDES_VIEWED",
             "RIDE",
             None,
-            {"query": q.strip(), "status": normalized_status},
+            {"query": q.strip(), "status": normalized_status, "year": year, "month": month},
         )
     return {
         "total": total,

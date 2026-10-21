@@ -228,9 +228,11 @@ object NetworkModule {
         override suspend fun adminRides(
             query: String,
             status: String,
+            year: Int?,
+            month: Int?,
             limit: Int,
             offset: Int
-        ) = currentAuthApi(context).adminRides(query, status, limit, offset)
+        ) = currentAuthApi(context).adminRides(query, status, year, month, limit, offset)
         override suspend fun adminRideDetail(rideSessionId: String) =
             currentAuthApi(context).adminRideDetail(rideSessionId)
         override suspend fun adminSensorImage(eventUuid: String) =

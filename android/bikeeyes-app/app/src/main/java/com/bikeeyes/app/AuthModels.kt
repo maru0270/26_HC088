@@ -624,6 +624,8 @@ interface AuthApi {
     suspend fun adminRides(
         @retrofit2.http.Query("q") query: String = "",
         @retrofit2.http.Query("status") status: String = "ALL",
+        @retrofit2.http.Query("year") year: Int? = null,
+        @retrofit2.http.Query("month") month: Int? = null,
         @retrofit2.http.Query("limit") limit: Int = 50,
         @retrofit2.http.Query("offset") offset: Int = 0
     ): AdminRideListResponse
