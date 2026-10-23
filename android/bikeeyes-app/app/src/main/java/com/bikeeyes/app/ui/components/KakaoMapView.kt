@@ -104,6 +104,7 @@ fun BikeEyesKakaoMap(
     initialLongitude: Double? = null,
     showCurrentLocation: Boolean = true,
     followCurrentLocation: Boolean = false,
+    followZoomLevel: Int = NAVIGATION_ZOOM_LEVEL,
     markers: List<BikeEyesMapMarker> = emptyList(),
     routePoints: List<BikeEyesMapPoint> = emptyList(),
     headingUp: Boolean = false,
@@ -404,6 +405,7 @@ fun BikeEyesKakaoMap(
         displayedHeadingDegrees,
         showCurrentLocation,
         followCurrentLocation,
+        followZoomLevel,
         headingUp
     ) {
         if (!showCurrentLocation) return@LaunchedEffect
@@ -454,7 +456,7 @@ fun BikeEyesKakaoMap(
                         CameraPosition.from(
                             locationDetails.latitude,
                             locationDetails.longitude,
-                            NAVIGATION_ZOOM_LEVEL,
+                            followZoomLevel,
                             currentCamera?.tiltAngle ?: 0.0,
                             mapRotation,
                             currentCamera?.height ?: 0.0
@@ -467,7 +469,7 @@ fun BikeEyesKakaoMap(
                     isHeadingTracking = false
                 }
                 readyMap.moveCamera(
-                    CameraUpdateFactory.newCenterPosition(position, NAVIGATION_ZOOM_LEVEL)
+                CameraUpdateFactory.newCenterPosition(position, followZoomLevel)
                 )
             }
             hasCenteredMap = true

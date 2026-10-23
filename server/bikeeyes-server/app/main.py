@@ -31,7 +31,7 @@ from app.ai_service import (
     process_pending_ai_jobs,
     recover_interrupted_ai_jobs,
 )
-from app.ai_annotation import render_detection_image
+from app.ai_annotation import render_detection_image, render_role_labels
 from app.hazard_rules import (
     AI_SENSOR_SUPPORT_DELTA,
     CLASS_RULES,
@@ -146,6 +146,30 @@ def is_retention_expired(
 
 def is_due_at(due_at_ms: int, now_ms: int) -> bool:
     return due_at_ms <= now_ms
+
+
+def admin_day_range(
+    year: int | None,
+    month: int | None,
+    day: int | None,
+) -> tuple[int, int, datetime, datetime] | None:
+    """Return the selected Korea-time calendar day as millisecond and SQL timestamp bounds."""
+    if year is None and month is None and day is None:
+        return None
+    if year is None or month is None or day is None:
+        raise HTTPException(status_code=422, detail="year, month and day must be provided together")
+    try:
+        kst = ZoneInfo("Asia/Seoul")
+        start = datetime(year, month, day, tzinfo=kst)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="invalid date") from exc
+    end = start + timedelta(days=1)
+    return (
+        int(start.timestamp() * 1000),
+        int(end.timestamp() * 1000),
+        start.replace(tzinfo=None),
+        end.replace(tzinfo=None),
+    )
 
 
 def track_orphan_sensor_session(cur, ride_session_id: str | None, now_ms: int | None = None):
@@ -713,7 +737,7 @@ def list_hazard_zones(
     statuses = ["CONFIRMED"]
     with db_transaction() as cur:
         cur.execute(
-            """
+            f"""
             SELECT zone_id::text, title, road_damage_type, severity,
                    latitude, longitude, radius_meters, detection_count,
                    description,
@@ -3957,6 +3981,7 @@ def admin_rides(
     status: str = Query(default="ALL"),
     year: int | None = Query(default=None, ge=2000, le=2100),
     month: int | None = Query(default=None, ge=1, le=12),
+    day: int | None = Query(default=None, ge=1, le=31),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ):
@@ -3964,21 +3989,12 @@ def admin_rides(
     normalized_status = status.upper()
     if normalized_status not in {"ALL", "COMPLETE", "INCOMPLETE", "DELETED"}:
         raise HTTPException(status_code=422, detail="unsupported ride status")
-    if (year is None) != (month is None):
-        raise HTTPException(status_code=422, detail="year and month must be provided together")
-
     period_filter = ""
     period_params: tuple[int, int] = ()
-    if year is not None and month is not None:
-        kst = ZoneInfo("Asia/Seoul")
-        period_start = datetime(year, month, 1, tzinfo=kst)
-        next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
-        period_end = datetime(next_year, next_month, 1, tzinfo=kst)
+    date_range = admin_day_range(year, month, day)
+    if date_range is not None:
         period_filter = "AND r.ended_at >= %s AND r.ended_at < %s"
-        period_params = (
-            int(period_start.timestamp() * 1000),
-            int(period_end.timestamp() * 1000),
-        )
+        period_params = date_range[:2]
     search = f"%{q.strip()}%"
     status_filter = {
         "ALL": "",
@@ -4043,7 +4059,7 @@ def admin_rides(
             "ADMIN_RIDES_VIEWED",
             "RIDE",
             None,
-            {"query": q.strip(), "status": normalized_status, "year": year, "month": month},
+            {"query": q.strip(), "status": normalized_status, "year": year, "month": month, "day": day},
         )
     return {
         "total": total,
@@ -4072,6 +4088,126 @@ def admin_rides(
                     if row[14] >= row[11] and row[16] >= row[12]
                     else "INCOMPLETE"
                 ),
+            }
+            for row in rows
+        ],
+    }
+
+
+@app.get("/admin/accidents")
+def admin_accidents(
+    request: Request,
+    q: str = Query(default="", max_length=100),
+    response_status: str = Query(default="ALL"),
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    day: int | None = Query(default=None, ge=1, le=31),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    """Returns rides that contain accident events matching the selected event filters."""
+    principal = require_admin(request)
+    normalized_status = response_status.upper()
+    if normalized_status not in {"ALL", "ACCIDENT", "SAFE", "NO_RESPONSE"}:
+        raise HTTPException(status_code=422, detail="unsupported accident response status")
+
+    date_range = admin_day_range(year, month, day)
+    period_filter = ""
+    period_params: tuple[int, int] = ()
+    if date_range is not None:
+        period_filter = "AND a.detected_at >= %s AND a.detected_at < %s"
+        period_params = date_range[:2]
+
+    safe_response = (
+        "(COALESCE(a.is_false_positive, FALSE)=TRUE "
+        "OR UPPER(a.confirmation_status) IN ('SAFE', 'OK', 'CANCELLED', 'FALSE_POSITIVE'))"
+    )
+    accident_response = (
+        f"(NOT {safe_response} "
+        "AND UPPER(a.confirmation_status) IN ('ACCIDENT', 'CONFIRMED', 'EMERGENCY'))"
+    )
+    no_response = (
+        f"(NOT {safe_response} "
+        "AND UPPER(a.confirmation_status) IN ('NO_RESPONSE', 'TIMEOUT', 'UNRESPONDED'))"
+    )
+    response_filter = {
+        "ALL": "",
+        "SAFE": f"AND {safe_response}",
+        "ACCIDENT": f"AND {accident_response}",
+        "NO_RESPONSE": f"AND {no_response}",
+    }[normalized_status]
+    search = f"%{q.strip()}%"
+    matching_accidents = f"""
+        SELECT a.ride_session_id,
+               COUNT(*) AS received_accidents,
+               MAX(a.detected_at) AS latest_detected_at,
+               SUM(CASE WHEN {accident_response} THEN 1 ELSE 0 END) AS accident_response_count,
+               SUM(CASE WHEN {safe_response} THEN 1 ELSE 0 END) AS safe_response_count,
+               SUM(CASE WHEN {no_response} THEN 1 ELSE 0 END) AS no_response_count
+        FROM accident_events a
+        WHERE a.ride_session_id IS NOT NULL
+          {period_filter}
+          {response_filter}
+        GROUP BY a.ride_session_id
+    """
+    base_where = """
+        WHERE (%s='' OR r.ride_session_id ILIKE %s OR u.email ILIKE %s
+               OR u.nickname ILIKE %s)
+    """
+    with db_transaction() as cur:
+        cur.execute(
+            f"""
+            WITH matching_accidents AS ({matching_accidents})
+            SELECT r.ride_session_id, u.nickname, m.latest_detected_at,
+                   m.received_accidents, m.accident_response_count,
+                   m.safe_response_count, m.no_response_count
+            FROM matching_accidents m
+            JOIN rides r ON r.ride_session_id=m.ride_session_id
+            LEFT JOIN users u ON u.user_id=r.user_id
+            {base_where}
+            ORDER BY m.latest_detected_at DESC
+            LIMIT %s OFFSET %s
+            """,
+            (*period_params, q.strip(), search, search, search, limit, offset),
+        )
+        rows = cur.fetchall()
+        cur.execute(
+            f"""
+            WITH matching_accidents AS ({matching_accidents})
+            SELECT COUNT(*)
+            FROM matching_accidents m
+            JOIN rides r ON r.ride_session_id=m.ride_session_id
+            LEFT JOIN users u ON u.user_id=r.user_id
+            {base_where}
+            """,
+            (*period_params, q.strip(), search, search, search),
+        )
+        total = cur.fetchone()[0]
+        audit(
+            cur,
+            principal.user_id,
+            "ADMIN_ACCIDENTS_VIEWED",
+            "ACCIDENT",
+            None,
+            {
+                "query": q.strip(),
+                "response_status": normalized_status,
+                "year": year,
+                "month": month,
+                "day": day,
+            },
+        )
+    return {
+        "total": total,
+        "items": [
+            {
+                "ride_session_id": row[0],
+                "nickname": row[1],
+                "latest_detected_at": row[2],
+                "received_accidents": row[3],
+                "accident_response_count": row[4],
+                "safe_response_count": row[5],
+                "no_response_count": row[6],
             }
             for row in rows
         ],
@@ -4260,7 +4396,15 @@ def admin_sensor_log_image(request: Request, event_uuid: str):
     image_file = _first_existing_stored_image_path(row[0])
     if image_file is None:
         raise HTTPException(status_code=404, detail="image file not found or has expired")
-    content = render_detection_image(image_file, detections, show_confidence=True)
+    annotated_file = _first_existing_stored_image_path(row[1]) if row[1] else None
+    # Prefer the durable AI annotation when available. This preserves the
+    # original evidence shape even if confidence rules changed after a hazard
+    # zone was created; labels remain an in-memory admin presentation layer.
+    content = (
+        render_role_labels(annotated_file, detections, show_confidence=True)
+        if annotated_file is not None
+        else render_detection_image(image_file, detections, show_confidence=True)
+    )
     return Response(
         content=content,
         media_type="image/jpeg",
@@ -4353,6 +4497,9 @@ def admin_review_item_image(request: Request, review_item_id: int):
 def admin_review_items(
     request: Request,
     status: str = Query(default="PENDING"),
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    day: int | None = Query(default=None, ge=1, le=31),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
@@ -4360,25 +4507,36 @@ def admin_review_items(
     normalized_status = status.upper()
     if normalized_status not in {"ALL", "PENDING", "CANDIDATE_REGISTERED", "NO_ISSUE"}:
         raise HTTPException(status_code=422, detail="unsupported review item status")
+    date_range = admin_day_range(year, month, day)
+    period_filter = ""
+    period_params: tuple[int, int] = ()
+    if date_range is not None:
+        period_filter = "AND captured_at >= %s AND captured_at < %s"
+        period_params = date_range[:2]
     with db_transaction() as cur:
         cur.execute(
-            """
+            f"""
             SELECT review_item_id,sensor_log_id,event_uuid,ride_session_id,image_path,
                    captured_at,peak_sample_at,latitude,longitude,peak_impact_delta,
                    speed_median,status,selected_classes,candidate_zone_ids,
                    reviewed_at,created_at
             FROM ai_review_items
             WHERE (%s='ALL' OR status=%s)
+              {period_filter}
             ORDER BY CASE WHEN status='PENDING' THEN 0 ELSE 1 END,
                      created_at DESC,review_item_id DESC
             LIMIT %s OFFSET %s
             """,
-            (normalized_status, normalized_status, limit, offset),
+            (normalized_status, normalized_status, *period_params, limit, offset),
         )
         rows = cur.fetchall()
-        cur.execute("SELECT COUNT(*) FROM ai_review_items WHERE status='PENDING'")
+        cur.execute(
+            f"SELECT COUNT(*) FROM ai_review_items WHERE status='PENDING' {period_filter}",
+            period_params,
+        )
         pending_count = cur.fetchone()[0]
-        audit(cur, principal.user_id, "ADMIN_REVIEW_ITEMS_VIEWED", "AI_REVIEW", None)
+        audit(cur, principal.user_id, "ADMIN_REVIEW_ITEMS_VIEWED", "AI_REVIEW", None,
+              {"year": year, "month": month, "day": day})
     return {
         "items": [
             {
@@ -4580,6 +4738,10 @@ def admin_hazard_zones(
     status: str = Query(default="ALL"),
     severity: str = Query(default="ALL"),
     zone_category: str = Query(default="ALL"),
+    damage_type: str = Query(default="ALL"),
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    day: int | None = Query(default=None, ge=1, le=31),
     include_test_data: bool = Query(default=True),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -4588,6 +4750,7 @@ def admin_hazard_zones(
     normalized_status = status.upper()
     normalized_severity = severity.upper()
     normalized_category = zone_category.upper()
+    normalized_damage_type = damage_type.lower()
     if normalized_status not in {
         "ALL", "CANDIDATE", "CONFIRMED", "STALE", "ARCHIVED",
         "EXPIRED", "REJECTED",
@@ -4597,10 +4760,36 @@ def admin_hazard_zones(
         raise HTTPException(status_code=422, detail="unsupported hazard zone severity")
     if normalized_category not in {"ALL", "ROAD_ANOMALY", "USER_HAZARD"}:
         raise HTTPException(status_code=422, detail="unsupported hazard zone category")
+    if normalized_damage_type not in {
+        "all", "pothole", "manhole", "flood_area", "bollard", "linear", "alligator", "crack",
+    }:
+        raise HTTPException(status_code=422, detail="unsupported hazard damage type")
+    date_range = admin_day_range(year, month, day)
+    date_filter = ""
+    date_params: tuple[datetime, datetime] = ()
+    if date_range is not None:
+        date_filter = "AND updated_at >= %s AND updated_at < %s"
+        date_params = date_range[2:]
+    damage_filter = ""
+    damage_params: tuple[str, ...] = ()
+    if normalized_damage_type == "crack":
+        damage_filter = "AND road_damage_type IN ('crack', 'linear', 'alligator')"
+    elif normalized_damage_type != "all":
+        damage_filter = "AND road_damage_type = %s"
+        damage_params = (normalized_damage_type,)
+    road_anomaly_filter = ""
+    if normalized_category == "ROAD_ANOMALY":
+        # ROAD_ANOMALY is AI-detection based. Historical sensor-only
+        # road_impact rows remain preserved in the database but must not be
+        # presented as an AI-detected road anomaly.
+        road_anomaly_filter = (
+            "AND road_damage_type IN "
+            "('pothole', 'manhole', 'flood_area', 'bollard', 'crack', 'linear', 'alligator')"
+        )
     search = f"%{q.strip()}%"
     with db_transaction() as cur:
         cur.execute(
-            """
+            f"""
             SELECT zone_id::text, title, road_damage_type, severity,
                    latitude, longitude, radius_meters, detection_count,
                    description, first_detected_at, last_detected_at,
@@ -4614,6 +4803,9 @@ def admin_hazard_zones(
               AND (%s='ALL' OR severity=%s)
               AND (%s='ALL' OR zone_category=%s)
               AND (%s OR is_test_data=FALSE)
+              {date_filter}
+              {road_anomaly_filter}
+              {damage_filter}
             ORDER BY
                 CASE status
                     WHEN 'REVIEW_REQUIRED' THEN 0
@@ -4631,12 +4823,12 @@ def admin_hazard_zones(
                 normalized_status, normalized_status,
                 normalized_severity, normalized_severity,
                 normalized_category, normalized_category,
-                include_test_data, limit, offset,
+                include_test_data, *date_params, *damage_params, limit, offset,
             ),
         )
         rows = cur.fetchall()
         cur.execute(
-            """
+            f"""
             SELECT COUNT(*) FROM hazard_zones
             WHERE (%s='' OR title ILIKE %s OR description ILIKE %s
                    OR road_damage_type ILIKE %s)
@@ -4644,6 +4836,9 @@ def admin_hazard_zones(
               AND (%s='ALL' OR severity=%s)
               AND (%s='ALL' OR zone_category=%s)
               AND (%s OR is_test_data=FALSE)
+              {date_filter}
+              {road_anomaly_filter}
+              {damage_filter}
             """,
             (
                 q.strip(), search, search, search,
@@ -4651,6 +4846,8 @@ def admin_hazard_zones(
                 normalized_severity, normalized_severity,
                 normalized_category, normalized_category,
                 include_test_data,
+                *date_params,
+                *damage_params,
             ),
         )
         total = cur.fetchone()[0]
@@ -4665,6 +4862,10 @@ def admin_hazard_zones(
                 "status": normalized_status,
                 "severity": normalized_severity,
                 "zone_category": normalized_category,
+                "damage_type": normalized_damage_type,
+                "year": year,
+                "month": month,
+                "day": day,
                 "include_test_data": include_test_data,
             },
         )
@@ -5231,12 +5432,21 @@ async def admin_run_backup(request: Request):
 @app.get("/admin/sync/issues")
 def admin_sync_issues(
     request: Request,
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    day: int | None = Query(default=None, ge=1, le=31),
     limit: int = Query(100, ge=1, le=500),
 ):
     principal = require_admin(request)
+    date_range = admin_day_range(year, month, day)
+    period_filter = ""
+    period_params: tuple[int, int] = ()
+    if date_range is not None:
+        period_filter = "AND r.ended_at >= %s AND r.ended_at < %s"
+        period_params = date_range[:2]
     with db_transaction() as cur:
         cur.execute(
-            """
+            f"""
             WITH received AS (
                 SELECT r.ride_session_id,
                        r.collected_frame_count AS expected_sensor_logs,
@@ -5249,6 +5459,7 @@ def admin_sync_issues(
                 LEFT JOIN sensor_logs s ON s.ride_session_id=r.ride_session_id
                 LEFT JOIN accident_events a ON a.ride_session_id=r.ride_session_id
                 WHERE r.deleted_at IS NULL
+                  {period_filter}
                 GROUP BY r.ride_session_id, r.collected_frame_count,
                          r.accident_count, r.ended_at
             )
@@ -5263,11 +5474,11 @@ def admin_sync_issues(
             ORDER BY ended_at DESC
             LIMIT %s
             """,
-            (limit,)
+            (*period_params, limit)
         )
         rows = cur.fetchall()
         cur.execute(
-            """
+            f"""
             SELECT COUNT(*) FROM rides r
             WHERE r.deleted_at IS NULL AND (
                 (SELECT COUNT(*) FROM sensor_logs s
@@ -5276,10 +5487,13 @@ def admin_sync_issues(
                 (SELECT COUNT(*) FROM accident_events a
                  WHERE a.ride_session_id=r.ride_session_id) < r.accident_count
             )
+            {period_filter}
             """
+            , period_params
         )
         total = cur.fetchone()[0]
-        audit(cur, principal.user_id, "ADMIN_SYNC_ISSUES_VIEWED", "RIDE", None)
+        audit(cur, principal.user_id, "ADMIN_SYNC_ISSUES_VIEWED", "RIDE", None,
+              {"year": year, "month": month, "day": day})
     return {
         "incomplete_ride_count": total,
         "items": [
@@ -5302,22 +5516,33 @@ def admin_sync_issues(
 @app.get("/admin/system-errors")
 def admin_system_errors(
     request: Request,
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    day: int | None = Query(default=None, ge=1, le=31),
     limit: int = Query(100, ge=1, le=500),
 ):
     principal = require_admin(request)
+    date_range = admin_day_range(year, month, day)
+    period_filter = ""
+    period_params: tuple[datetime, datetime] = ()
+    if date_range is not None:
+        period_filter = "AND created_at >= %s AND created_at < %s"
+        period_params = date_range[2:]
     with db_transaction() as cur:
         cur.execute(
-            """
+            f"""
             SELECT system_log_id, request_id, level, endpoint, status_code,
                    message, details, created_at
             FROM system_logs
             WHERE level IN ('WARN', 'ERROR')
+              {period_filter}
             ORDER BY created_at DESC LIMIT %s
             """,
-            (limit,)
+            (*period_params, limit)
         )
         rows = cur.fetchall()
-        audit(cur, principal.user_id, "ADMIN_SYSTEM_ERRORS_VIEWED", "SYSTEM_LOG", None)
+        audit(cur, principal.user_id, "ADMIN_SYSTEM_ERRORS_VIEWED", "SYSTEM_LOG", None,
+              {"year": year, "month": month, "day": day})
     return [
         {
             "system_log_id": row[0],
@@ -5336,23 +5561,34 @@ def admin_system_errors(
 @app.get("/admin/audit-logs")
 def admin_audit_logs(
     request: Request,
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    day: int | None = Query(default=None, ge=1, le=31),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
     principal = require_admin(request)
+    date_range = admin_day_range(year, month, day)
+    period_filter = ""
+    period_params: tuple[datetime, datetime] = ()
+    if date_range is not None:
+        period_filter = "WHERE created_at >= %s AND created_at < %s"
+        period_params = date_range[2:]
     conn = get_connection()
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """
+                f"""
                 SELECT audit_log_id, actor_user_id, action, target_type,
                        target_id, details, created_at
-                FROM audit_logs ORDER BY created_at DESC LIMIT %s OFFSET %s
+                FROM audit_logs {period_filter}
+                ORDER BY created_at DESC LIMIT %s OFFSET %s
                 """,
-                (limit, offset)
+                (*period_params, limit, offset)
             )
             rows = cur.fetchall()
-            audit(cur, principal.user_id, "ADMIN_AUDIT_LOGS_VIEWED", "AUDIT_LOG", None)
+            audit(cur, principal.user_id, "ADMIN_AUDIT_LOGS_VIEWED", "AUDIT_LOG", None,
+                  {"year": year, "month": month, "day": day})
         conn.commit()
     finally:
         conn.close()

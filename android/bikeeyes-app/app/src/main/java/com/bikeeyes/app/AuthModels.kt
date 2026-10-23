@@ -232,6 +232,21 @@ data class AdminRideListResponse(
     val items: List<AdminRideItem>
 )
 
+data class AdminAccidentListItem(
+    val ride_session_id: String,
+    val nickname: String?,
+    val latest_detected_at: Long,
+    val received_accidents: Int,
+    val accident_response_count: Int,
+    val safe_response_count: Int,
+    val no_response_count: Int
+)
+
+data class AdminAccidentListResponse(
+    val total: Int,
+    val items: List<AdminAccidentListItem>
+)
+
 data class AdminRideSummary(
     val ride_session_id: String,
     val user_id: Long?,
@@ -626,9 +641,21 @@ interface AuthApi {
         @retrofit2.http.Query("status") status: String = "ALL",
         @retrofit2.http.Query("year") year: Int? = null,
         @retrofit2.http.Query("month") month: Int? = null,
+        @retrofit2.http.Query("day") day: Int? = null,
         @retrofit2.http.Query("limit") limit: Int = 50,
         @retrofit2.http.Query("offset") offset: Int = 0
     ): AdminRideListResponse
+
+    @GET("admin/accidents")
+    suspend fun adminAccidents(
+        @retrofit2.http.Query("q") query: String = "",
+        @retrofit2.http.Query("response_status") responseStatus: String = "ALL",
+        @retrofit2.http.Query("year") year: Int? = null,
+        @retrofit2.http.Query("month") month: Int? = null,
+        @retrofit2.http.Query("day") day: Int? = null,
+        @retrofit2.http.Query("limit") limit: Int = 50,
+        @retrofit2.http.Query("offset") offset: Int = 0
+    ): AdminAccidentListResponse
 
     @GET("admin/rides/{rideSessionId}")
     suspend fun adminRideDetail(
@@ -647,6 +674,10 @@ interface AuthApi {
         @retrofit2.http.Query("status") status: String = "ALL",
         @retrofit2.http.Query("severity") severity: String = "ALL",
         @retrofit2.http.Query("zone_category") zoneCategory: String = "ALL",
+        @retrofit2.http.Query("damage_type") damageType: String = "ALL",
+        @retrofit2.http.Query("year") year: Int? = null,
+        @retrofit2.http.Query("month") month: Int? = null,
+        @retrofit2.http.Query("day") day: Int? = null,
         @retrofit2.http.Query("include_test_data") includeTestData: Boolean = true,
         @retrofit2.http.Query("limit") limit: Int = 500,
         @retrofit2.http.Query("offset") offset: Int = 0
@@ -666,6 +697,9 @@ interface AuthApi {
     @GET("admin/review-items")
     suspend fun adminReviewItems(
         @retrofit2.http.Query("status") status: String = "PENDING",
+        @retrofit2.http.Query("year") year: Int? = null,
+        @retrofit2.http.Query("month") month: Int? = null,
+        @retrofit2.http.Query("day") day: Int? = null,
         @retrofit2.http.Query("limit") limit: Int = 100,
         @retrofit2.http.Query("offset") offset: Int = 0
     ): AdminReviewItemListResponse
@@ -694,17 +728,26 @@ interface AuthApi {
 
     @GET("admin/audit-logs")
     suspend fun auditLogs(
+        @retrofit2.http.Query("year") year: Int? = null,
+        @retrofit2.http.Query("month") month: Int? = null,
+        @retrofit2.http.Query("day") day: Int? = null,
         @retrofit2.http.Query("limit") limit: Int = 100,
         @retrofit2.http.Query("offset") offset: Int = 0
     ): List<AuditLogResponse>
 
     @GET("admin/sync/issues")
     suspend fun syncIssues(
+        @retrofit2.http.Query("year") year: Int? = null,
+        @retrofit2.http.Query("month") month: Int? = null,
+        @retrofit2.http.Query("day") day: Int? = null,
         @retrofit2.http.Query("limit") limit: Int = 100
     ): SyncIssuesResponse
 
     @GET("admin/system-errors")
     suspend fun systemErrors(
+        @retrofit2.http.Query("year") year: Int? = null,
+        @retrofit2.http.Query("month") month: Int? = null,
+        @retrofit2.http.Query("day") day: Int? = null,
         @retrofit2.http.Query("limit") limit: Int = 100
     ): List<SystemErrorResponse>
 

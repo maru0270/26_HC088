@@ -162,12 +162,32 @@ class AuthRepository(context: Context) {
         query: String = "",
         status: String = "ALL",
         year: Int? = null,
-        month: Int? = null
+        month: Int? = null,
+        day: Int? = null
     ): AdminRideListResponse = api.adminRides(
         query = query,
         status = status,
         year = year,
-        month = month
+        month = month,
+        day = day
+    )
+
+    suspend fun adminAccidents(
+        query: String = "",
+        responseStatus: String = "ALL",
+        year: Int? = null,
+        month: Int? = null,
+        day: Int? = null,
+        limit: Int = 50,
+        offset: Int = 0
+    ): AdminAccidentListResponse = api.adminAccidents(
+        query = query,
+        responseStatus = responseStatus,
+        year = year,
+        month = month,
+        day = day,
+        limit = limit,
+        offset = offset
     )
 
     suspend fun adminRideDetail(rideSessionId: String): AdminRideDetailResponse =
@@ -181,6 +201,10 @@ class AuthRepository(context: Context) {
         status: String = "ALL",
         severity: String = "ALL",
         zoneCategory: String = "ALL",
+        damageType: String = "ALL",
+        year: Int? = null,
+        month: Int? = null,
+        day: Int? = null,
         includeTestData: Boolean = true,
         limit: Int = 500,
         offset: Int = 0
@@ -190,6 +214,10 @@ class AuthRepository(context: Context) {
             status,
             severity,
             zoneCategory,
+            damageType,
+            year,
+            month,
+            day,
             includeTestData,
             limit,
             offset
@@ -206,9 +234,12 @@ class AuthRepository(context: Context) {
 
     suspend fun adminReviewItems(
         status: String = "PENDING",
+        year: Int? = null,
+        month: Int? = null,
+        day: Int? = null,
         limit: Int = 100,
         offset: Int = 0
-    ): AdminReviewItemListResponse = api.adminReviewItems(status, limit, offset)
+    ): AdminReviewItemListResponse = api.adminReviewItems(status, year, month, day, limit, offset)
 
     suspend fun adminReviewItemDetail(reviewItemId: Long): AdminReviewItemDetail =
         api.adminReviewItemDetail(reviewItemId)
@@ -227,11 +258,14 @@ class AuthRepository(context: Context) {
     suspend fun dismissReviewItem(reviewItemId: Long): ReviewItemActionResponse =
         api.dismissReviewItem(reviewItemId)
 
-    suspend fun auditLogs(): List<AuditLogResponse> = api.auditLogs()
+    suspend fun auditLogs(year: Int? = null, month: Int? = null, day: Int? = null): List<AuditLogResponse> =
+        api.auditLogs(year, month, day)
 
-    suspend fun syncIssues(): SyncIssuesResponse = api.syncIssues()
+    suspend fun syncIssues(year: Int? = null, month: Int? = null, day: Int? = null): SyncIssuesResponse =
+        api.syncIssues(year, month, day)
 
-    suspend fun systemErrors(): List<SystemErrorResponse> = api.systemErrors()
+    suspend fun systemErrors(year: Int? = null, month: Int? = null, day: Int? = null): List<SystemErrorResponse> =
+        api.systemErrors(year, month, day)
 
     suspend fun adminOperations(): AdminOperationsResponse = api.adminOperations()
 

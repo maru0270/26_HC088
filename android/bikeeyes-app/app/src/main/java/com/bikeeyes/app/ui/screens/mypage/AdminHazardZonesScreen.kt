@@ -14,13 +14,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,6 +43,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bikeeyes.app.AdminHazardZoneDetailResponse
 import com.bikeeyes.app.AdminHazardZoneItem
@@ -98,9 +104,12 @@ private fun AdminZoneAnalysisScreen(
     var query by remember { mutableStateOf("") }
     var status by remember { mutableStateOf("ALL") }
     var severity by remember { mutableStateOf("ALL") }
+    var damageType by remember { mutableStateOf("ALL") }
+    var selectedYear by remember { mutableStateOf<Int?>(null) }
+    var selectedMonth by remember { mutableStateOf<Int?>(null) }
+    var selectedDay by remember { mutableStateOf<Int?>(null) }
     var includeTestData by remember { mutableStateOf(false) }
     var zones by remember { mutableStateOf<List<AdminHazardZoneItem>>(emptyList()) }
-    var total by remember { mutableIntStateOf(0) }
     var zoneIndex by remember { mutableIntStateOf(0) }
     var selectedZoneId by remember { mutableStateOf<String?>(null) }
     var detailRequestGeneration by remember { mutableIntStateOf(0) }
@@ -148,7 +157,6 @@ private fun AdminZoneAnalysisScreen(
         detailRequestGeneration++
         imageRequestGeneration++
         zones = emptyList()
-        total = 0
         selectedZoneId = null
         selected = null
         zoneIndex = 0
@@ -161,7 +169,7 @@ private fun AdminZoneAnalysisScreen(
         pendingMarkerScrollZoneId = null
     }
 
-    fun loadDetail(zoneId: String, revealDetail: Boolean = true) {
+    fun loadDetail(zoneId: String, revealDetail: Boolean = false) {
         val requestGeneration = detailRequestGeneration + 1
         detailRequestGeneration = requestGeneration
         selectedZoneId = zoneId
@@ -199,7 +207,7 @@ private fun AdminZoneAnalysisScreen(
         }
     }
 
-    fun selectZone(zoneId: String, revealDetail: Boolean = true) {
+    fun selectZone(zoneId: String, revealDetail: Boolean = false) {
         val matchingIndex = zones.indexOfFirst { it.zone_id == zoneId }
         if (matchingIndex >= 0) zoneIndex = matchingIndex
         loadDetail(zoneId, revealDetail)
@@ -218,6 +226,10 @@ private fun AdminZoneAnalysisScreen(
                 status = status,
                 severity = severity,
                 zoneCategory = zoneCategory,
+                damageType = damageType,
+                year = selectedYear,
+                month = selectedMonth,
+                day = selectedDay,
                 includeTestData = includeTestData,
                 limit = 500
             )
@@ -228,7 +240,6 @@ private fun AdminZoneAnalysisScreen(
                         (!requirePublicConfirmedZone || zone.isPublicConfirmedHazard()))
             }
             zones = filteredZones
-            total = filteredZones.size
 
             if (filteredZones.isEmpty()) {
                 preferredZoneIdAfterRefresh = null
@@ -281,6 +292,14 @@ private fun AdminZoneAnalysisScreen(
             onBack,
             onDashboard
         )
+        AdminDateFilter(selectedYear, selectedMonth, selectedDay, { year, month, day ->
+            selectedYear = year
+            selectedMonth = month
+            selectedDay = day
+            preferredZoneIdAfterRefresh = null
+            clearZoneSelection()
+            refreshKey++
+        }, enabled = !loading && profile.role == "ADMIN")
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -334,24 +353,47 @@ private fun AdminZoneAnalysisScreen(
                 }
             }
         )
-        Text("분석 조건 검색", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("제목·파손 유형·설명 검색") },
-            singleLine = true
-        )
-        Button(
-            modifier = Modifier.fillMaxWidth(),
-            enabled = !loading && profile.role == "ADMIN",
-            onClick = {
-                preferredZoneIdAfterRefresh = null
-                clearZoneSelection()
-                refreshKey++
+        if (zoneCategory == "ROAD_ANOMALY") {
+            Text("탐지 클래스", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            DetectionClassFilterRows(
+                values = listOf(
+                    "ALL" to "전체",
+                    "pothole" to "포트홀",
+                    "manhole" to "맨홀",
+                    "flood_area" to "침수구간",
+                    "bollard" to "볼라드",
+                    "CRACK" to "균열"
+                ),
+                selected = damageType,
+                onSelected = {
+                    if (damageType != it) {
+                        damageType = it
+                        preferredZoneIdAfterRefresh = null
+                        clearZoneSelection()
+                        refreshKey++
+                    }
+                }
+            )
+        } else {
+            Text("분석 조건 검색", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("제목·파손 유형·설명 검색") },
+                singleLine = true
+            )
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !loading && profile.role == "ADMIN",
+                onClick = {
+                    preferredZoneIdAfterRefresh = null
+                    clearZoneSelection()
+                    refreshKey++
+                }
+            ) {
+                Text("${zoneLabel} 검색")
             }
-        ) {
-            Text("${zoneLabel} 검색")
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -388,12 +430,42 @@ private fun AdminZoneAnalysisScreen(
         }
         if (loading) CircularProgressIndicator()
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        Text("검색 결과 ${total}건", fontWeight = FontWeight.Bold)
+        if (zones.isNotEmpty()) {
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        when (status) {
+                            "CONFIRMED" -> "확정 $zoneLabel"
+                            "CANDIDATE" -> "$zoneLabel 후보"
+                            else -> zoneLabel
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    HazardCarouselNavigation(
+                        current = zoneIndex,
+                        total = zones.size,
+                        previousLabel = "이전",
+                        nextLabel = "다음",
+                        onPrevious = {
+                            zoneIndex = if (zoneIndex == 0) zones.lastIndex else zoneIndex - 1
+                            selectZone(zones[zoneIndex].zone_id)
+                        },
+                        onNext = {
+                            zoneIndex = if (zoneIndex == zones.lastIndex) 0 else zoneIndex + 1
+                            selectZone(zones[zoneIndex].zone_id)
+                        }
+                    )
+                }
+            }
+        }
 
         selected
             ?.takeIf { detail -> zones.any { zone -> zone.zone_id == detail.zone.zone_id } }
             ?.let { detail ->
-                SelectedZoneContextCard(detail, zoneLabel, evidenceIndex)
                 HazardAdminDetail(
                     detail = detail,
                     zoneLabel = zoneLabel,
@@ -429,19 +501,10 @@ private fun AdminZoneAnalysisScreen(
                     selectedImage = selectedImage,
                     imageLoading = imageLoading,
                     imageError = imageError,
-                    onImageClick = ::loadEvidenceImage
+                    onImageReload = ::loadEvidenceImage
                 )
             }
 
-        Text(
-            when (status) {
-                "CONFIRMED" -> "확정 $zoneLabel"
-                "CANDIDATE" -> "$zoneLabel 후보"
-                else -> zoneLabel
-            },
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
-        )
         if (zones.isEmpty()) {
             Card(Modifier.fillMaxWidth()) {
                 Text(
@@ -450,23 +513,16 @@ private fun AdminZoneAnalysisScreen(
                 )
             }
         } else {
-            HazardCarouselNavigation(
-                current = zoneIndex,
-                total = zones.size,
-                previousLabel = "이전",
-                nextLabel = "다음",
-                onPrevious = {
-                    zoneIndex = if (zoneIndex == 0) zones.lastIndex else zoneIndex - 1
-                    selectZone(zones[zoneIndex].zone_id)
-                },
-                onNext = {
-                    zoneIndex = if (zoneIndex == zones.lastIndex) 0 else zoneIndex + 1
-                    selectZone(zones[zoneIndex].zone_id)
-                }
-            )
             HazardAdminCard(
                 zone = zones[zoneIndex],
-                onClick = { selectZone(zones[zoneIndex].zone_id, revealDetail = true) }
+                isDetailExpanded = showZoneDetail,
+                onClick = {
+                    if (showZoneDetail) {
+                        showZoneDetail = false
+                    } else {
+                        selectZone(zones[zoneIndex].zone_id, revealDetail = true)
+                    }
+                }
             )
         }
         selected
@@ -513,7 +569,7 @@ private fun AdminZoneAnalysisScreen(
                 selectedImage = selectedImage,
                 imageLoading = imageLoading,
                 imageError = imageError,
-                onImageClick = ::loadEvidenceImage
+                onImageReload = ::loadEvidenceImage
             )
         }
     }
@@ -576,6 +632,30 @@ private fun FilterRow(
 }
 
 @Composable
+private fun DetectionClassFilterRows(
+    values: List<Pair<String, String>>,
+    selected: String,
+    onSelected: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(values.take(4), values.drop(4)).filter { it.isNotEmpty() }.forEach { rowValues ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                rowValues.forEach { value ->
+                    FilterChip(
+                        selected = selected == value.first,
+                        onClick = { onSelected(value.first) },
+                        label = { Text(value.second) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun HazardCountCard(modifier: Modifier, title: String, value: String) {
     Card(modifier) {
         Column(
@@ -589,7 +669,11 @@ private fun HazardCountCard(modifier: Modifier, title: String, value: String) {
 }
 
 @Composable
-private fun HazardAdminCard(zone: AdminHazardZoneItem, onClick: () -> Unit) {
+private fun HazardAdminCard(
+    zone: AdminHazardZoneItem,
+    isDetailExpanded: Boolean,
+    onClick: () -> Unit
+) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
@@ -608,34 +692,8 @@ private fun HazardAdminCard(zone: AdminHazardZoneItem, onClick: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall
             )
             Button(modifier = Modifier.fillMaxWidth(), onClick = onClick) {
-                Text("상세 검토")
+                Text(if (isDetailExpanded) "상세 검토 닫기" else "상세 검토")
             }
-        }
-    }
-}
-
-@Composable
-private fun SelectedZoneContextCard(
-    detail: AdminHazardZoneDetailResponse,
-    zoneLabel: String,
-    evidenceIndex: Int
-) {
-    val zone = detail.zone
-    Card(Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text("선택한 $zoneLabel", style = MaterialTheme.typography.labelLarge)
-            Text(
-                "${zone.title} · ${hazardStatusText(zone.status)}",
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "${damageTypeText(zone.road_damage_type)} · 위험도 ${severityText(zone.severity)} · " +
-                    "근거 ${evidenceIndex.coerceAtLeast(0) + 1}/${detail.evidence.size}",
-                style = MaterialTheme.typography.bodySmall
-            )
         }
     }
 }
@@ -654,13 +712,14 @@ private fun HazardAdminDetail(
     selectedImage: Bitmap?,
     imageLoading: Boolean,
     imageError: String?,
-    onImageClick: (String) -> Unit
+    onImageReload: (String) -> Unit
 ) {
     val zone = detail.zone
     val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     val firstDetected = LocalDateTime.parse(zone.first_detected_at).format(formatter)
     val lastDetected = LocalDateTime.parse(zone.last_detected_at).format(formatter)
+    var showFeedback by remember(zone.zone_id) { mutableStateOf(false) }
 
     if (showZoneDetail) {
         Text("선택한 $zoneLabel 상세", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -700,35 +759,42 @@ private fun HazardAdminDetail(
                 }
             }
         }
-        Card(Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                Text("라이더 현장 의견", fontWeight = FontWeight.Bold)
-                Text(
-                    "위험요소 유지 ${detail.feedback_summary.danger} · " +
-                        "주의 필요 ${detail.feedback_summary.caution} · " +
-                        "개선됨 ${detail.feedback_summary.resolved}"
-                )
-                if (detail.recent_feedback.isEmpty()) {
+    }
+    if (!showEvidence) {
+        TextButton(onClick = { showFeedback = !showFeedback }) {
+            Text(if (showFeedback) "라이더 현장 의견 닫기" else "라이더 현장 의견 보기")
+        }
+        if (showFeedback) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Text("라이더 현장 의견", fontWeight = FontWeight.Bold)
                     Text(
-                        "아직 등록된 현장 의견이 없습니다.",
-                        style = MaterialTheme.typography.bodySmall
+                        "위험요소 유지 ${detail.feedback_summary.danger} · " +
+                            "주의 필요 ${detail.feedback_summary.caution} · " +
+                            "개선됨 ${detail.feedback_summary.resolved}"
                     )
-                } else {
-                    detail.recent_feedback.take(5).forEach { feedback ->
+                    if (detail.recent_feedback.isEmpty()) {
                         Text(
-                            "${feedback.updated_at.replace('T', ' ')} · " +
-                                "${feedback.nickname} · ${feedbackTypeText(feedback.feedback_type)}",
+                            "아직 등록된 현장 의견이 없습니다.",
                             style = MaterialTheme.typography.bodySmall
                         )
+                    } else {
+                        detail.recent_feedback.take(5).forEach { feedback ->
+                            Text(
+                                "${feedback.updated_at.replace('T', ' ')} · " +
+                                    "${feedback.nickname} · ${feedbackTypeText(feedback.feedback_type)}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
+                    Text(
+                        "현장 의견은 참고 정보이며 AI 근거와 자동 확정 조건을 변경하지 않습니다.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
-                Text(
-                    "현장 의견은 참고 정보이며 AI 근거와 자동 확정 조건을 변경하지 않습니다.",
-                    style = MaterialTheme.typography.bodySmall
-                )
             }
         }
     }
@@ -788,6 +854,47 @@ private fun HazardAdminDetail(
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
+                if (evidence.has_image && !eventUuid.isNullOrBlank()) {
+                    if (imageSelected) {
+                        if (imageLoading) CircularProgressIndicator()
+                        imageError?.let {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    it,
+                                    modifier = Modifier.weight(1f),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                IconButton(onClick = { onImageReload(eventUuid) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "근거 이미지 다시 불러오기"
+                                    )
+                                }
+                            }
+                        }
+                        selectedImage?.let { bitmap ->
+                            Text("수집 이미지", fontWeight = FontWeight.SemiBold)
+                            Image(
+                                bitmap = bitmap.asImageBitmap(),
+                                contentDescription = "근거 ${safeEvidenceIndex + 1} 수집 이미지",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(260.dp)
+                                    .clip(RoundedCornerShape(12.dp)),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        "이 기록에는 보관 중인 이미지가 없습니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 Text(
                     "대표 Peak 센서값 1건",
                     style = MaterialTheme.typography.bodySmall,
@@ -811,38 +918,6 @@ private fun HazardAdminDetail(
                     "촬영 이미지",
                     if (evidence.has_image) "있음" else "없음"
                 )
-                if (evidence.has_image && !eventUuid.isNullOrBlank()) {
-                    Button(
-                        modifier = Modifier.fillMaxWidth(),
-                        onClick = { onImageClick(eventUuid) }
-                    ) {
-                        Text(if (imageSelected && selectedImage != null) "이미지 다시 불러오기" else "이미지 보기")
-                    }
-                    if (imageSelected) {
-                        if (imageLoading) CircularProgressIndicator()
-                        imageError?.let {
-                            Text(it, color = MaterialTheme.colorScheme.error)
-                        }
-                        selectedImage?.let { bitmap ->
-                            Text("수집 이미지", fontWeight = FontWeight.SemiBold)
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "근거 ${safeEvidenceIndex + 1} 수집 이미지",
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(260.dp)
-                                    .clip(RoundedCornerShape(12.dp)),
-                                contentScale = ContentScale.Fit
-                            )
-                        }
-                    }
-                } else {
-                    Text(
-                        "이 기록에는 보관 중인 이미지가 없습니다.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
         }
     }
@@ -875,7 +950,8 @@ private fun HazardCarouselNavigation(
             Text(
                 "${current + 1} / $total",
                 modifier = Modifier.padding(vertical = 12.dp).fillMaxWidth(),
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
             )
         }
         Button(modifier = Modifier.weight(1f), onClick = onNext) {

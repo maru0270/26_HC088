@@ -19,7 +19,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -30,7 +29,6 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,11 +80,6 @@ fun AdminAccidentDetailScreen(
     val repository = remember(context) { AuthRepository(context) }
     val isAdmin = remember(context) { UserSettingsStore(context).loadProfile().role == "ADMIN" }
     var refreshKey by remember(sessionId) { mutableIntStateOf(0) }
-    var filterName by rememberSaveable(sessionId, initialFilter) {
-        mutableStateOf(AdminAccidentFilter.fromRoute(initialFilter).name)
-    }
-    val filter = AdminAccidentFilter.fromRoute(filterName)
-
     // Room으로 다른 사용자의 기록을 복제하지 않는다. 서버에서도 require_admin으로 검사.
     key(sessionId, refreshKey) {
         val detail by produceState<AdminAccidentLoad<com.bikeeyes.app.AdminRideDetailResponse>>(
@@ -105,7 +98,7 @@ fun AdminAccidentDetailScreen(
         ) {
             AdminScreenHeader(
                 "사고 감지 기록 상세",
-                "해당 주행의 사고·괜찮아요·무응답 기록과 근거 이미지를 확인합니다.",
+                "선택한 사고 감지 기록과 근거 이미지를 확인합니다.",
                 onBack, onDashboard
             )
             when (val state = detail) {
@@ -123,46 +116,20 @@ fun AdminAccidentDetailScreen(
                         Text("주행 종료 시간 : ${accidentDetailTime(response.ride.ended_at)}")
                         Text("서버에 저장된 사고 기록 ${response.accidents.size}건")
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        AdminAccidentFilter.entries.forEach { option ->
-                            FilterChip(
-                                selected = option == filter,
-                                onClick = { filterName = option.name },
-                                label = { Text(option.label) }
-                            )
-                        }
-                    }
-                    var pager by remember(sessionId, response.accidents, filter, initialEventUuid) {
-                        mutableStateOf(
-                            AdminAccidentPager.create(
-                                events = response.accidents,
-                                filter = filter,
-                                initialEventUuid = initialEventUuid
-                            )
+                    val event = response.accidents.firstOrNull { it.event_uuid == initialEventUuid }
+                        ?: response.accidents.maxWithOrNull(
+                            compareBy<com.bikeeyes.app.AdminAccidentRecord> { it.detected_at }
+                                .thenBy { it.event_uuid }
                         )
-                    }
-                    val event = pager.current
                     if (event == null) {
                         AccidentDetailPanel("사고 감지 기록") {
-                            Text(if (response.accidents.isEmpty()) "이 주행에 저장된 사고 기록이 없습니다."
-                                else "선택한 응답 상태의 사고 기록이 없습니다. ‘전체’를 선택해 주세요.")
+                            Text("이 주행에 저장된 사고 기록이 없습니다.")
                         }
                     } else {
-                        Row(
-                            Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedButton(onClick = { pager = pager.previous() }, enabled = pager.hasPrevious) {
-                                Text("‹ 이전 사고")
-                            }
-                            Text("${pager.index + 1} / ${pager.events.size}", fontWeight = FontWeight.Bold)
-                            OutlinedButton(onClick = { pager = pager.next() }, enabled = pager.hasNext) {
-                                Text("다음 사고 ›")
-                            }
-                        }
                         // 사고 UUID가 바뀌면 지도, 이미지 목록, 이미지 페이지/비동기 요청을 모두 초기화.
                         key(event.event_uuid) {
-                            AccidentDetailPanel(event.responseLabel()) {
+                            AccidentDetailPanel("사고 상세 내용") {
+                                AccidentValue("사용자 응답", event.responseLabel())
                                 AccidentValue("발생 시각", accidentDetailTime(event.detected_at))
                                 AccidentValue("서버 저장", "저장 완료")
                                 AccidentValue("당시 속도", event.speed?.let { "%.1f km/h".format(it * 3.6) } ?: "정보 없음")

@@ -82,8 +82,10 @@ fun RouteSearchResultScreen(
                         modifier = Modifier.padding(12.dp)
                     ) {
                         Text(
-                            "보행로·계단·자전거 통행 제한 구간을 포함할 수 있습니다. " +
-                                "통행이 허용되지 않은 구간에서는 자전거에서 내려 이동하세요.",
+                            "일반도로·보행로·계단·자전거 통행 제한 구간을 포함할 수 있습니다. " +
+                                "통행이 허용되지 않은 구간에서는 자전거에서 내려 이동하세요. " +
+                                "또한 일반도로에서는 자전거 주행 환경과 다른 도로 구조·속도로 인해 " +
+                                "노면 위험요소 객체 탐지 결과가 정확하지 않거나 일부 누락될 수 있습니다.",
                             style = MaterialTheme.typography.bodySmall,
                             color = androidx.compose.ui.graphics.Color(0xFF9A5A00)
                         )

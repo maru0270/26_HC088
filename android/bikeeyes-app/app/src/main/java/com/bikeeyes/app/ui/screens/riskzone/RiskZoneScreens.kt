@@ -187,6 +187,8 @@ private fun RiskMapPreview(
                 .clip(RoundedCornerShape(16.dp)),
             showCurrentLocation = true,
             followCurrentLocation = true,
+            // 주행 화면(18)보다 넓은 범위를 보여 여러 위험구간을 함께 확인한다.
+            followZoomLevel = 15,
             markers = zones.map { zone ->
                 BikeEyesMapMarker(
                     id = zone.zone_id,

@@ -17,6 +17,7 @@ logger = logging.getLogger("bikeeyes.demo_monitor")
 STATIC_DIR = Path(__file__).resolve().parent / "static" / "demo-monitor"
 DEMO_MONITOR_ENABLED = os.getenv("BIKE_DEMO_MONITOR_ENABLED", "true").lower() == "true"
 DEMO_MONITOR_ALLOW_REMOTE = os.getenv("BIKE_DEMO_MONITOR_ALLOW_REMOTE", "false").lower() == "true"
+
 CATEGORY_LABELS = {
     "AUTH": "계정",
     "RIDE": "주행",

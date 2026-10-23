@@ -4,6 +4,7 @@
 **/*.hprof
 **/.DS_Store
 **/local.properties
+android/bikeeyes-app/app/schemas/
 **/.env
 !**/.env.example
 

@@ -393,6 +393,7 @@ private fun RoadCollectionRecordDetailLayout(
 
 @Composable
 private fun RoadRecordDetail(record: RoadCollectionRecord) {
+    var showDetectionDetails by remember(record.stableKey) { mutableStateOf(false) }
     CaptureImage(
         path = record.imagePath,
         eventUuid = record.eventUuid,
@@ -456,6 +457,25 @@ private fun RoadRecordDetail(record: RoadCollectionRecord) {
     }
 
     if (record.detections.isNotEmpty()) {
+        val highestConfidenceByClass = record.detections
+            .groupBy { it.class_name.lowercase() }
+            .values
+            .mapNotNull { detections -> detections.maxByOrNull { it.confidence } }
+        val allDetectionDetails = record.detections
+            .groupBy { it.class_name.lowercase() }
+            .flatMap { (_, detections) ->
+                val sortedDetections = detections.sortedByDescending { it.confidence }
+                sortedDetections.mapIndexed { index, detection ->
+                    val className = roadAnomalyClassText(detection.class_name)
+                    val label = if (sortedDetections.size > 1) "$className ${index + 1}" else className
+                    label to String.format(
+                        Locale.KOREA,
+                        "%s · 신뢰도 %.1f%%",
+                        roadAnomalyMeaning(detection.class_name),
+                        detection.confidence * 100.0,
+                    )
+                }
+            }
         SectionTitle("AI 노면 판독 결과")
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -476,7 +496,7 @@ private fun RoadRecordDetail(record: RoadCollectionRecord) {
             }
         }
         DetailCard(
-            record.detections.map {
+            highestConfidenceByClass.map {
                 roadAnomalyClassText(it.class_name) to
                     String.format(
                         Locale.KOREA,
@@ -486,6 +506,20 @@ private fun RoadRecordDetail(record: RoadCollectionRecord) {
                     )
             }
         )
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { showDetectionDetails = !showDetectionDetails }
+        ) {
+            Text(if (showDetectionDetails) "신뢰도 상세 닫기" else "신뢰도 상세 보기")
+        }
+        if (showDetectionDetails) {
+            Text(
+                "탐지된 전체 객체 ${record.detections.size}건",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            DetailCard(allDetectionDetails)
+        }
     }
 
     record.localRecordId?.let {

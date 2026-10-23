@@ -55,6 +55,9 @@ fun AdminSystemScreen(onBack: () -> Unit = {}, onDashboard: () -> Unit = {}) {
     var selectedTab by remember { mutableStateOf(AdminSystemTab.ERRORS) }
     var query by remember { mutableStateOf("") }
     var level by remember { mutableStateOf("ALL") }
+    var selectedYear by remember { mutableStateOf<Int?>(null) }
+    var selectedMonth by remember { mutableStateOf<Int?>(null) }
+    var selectedDay by remember { mutableStateOf<Int?>(null) }
     var selectedDetail by remember { mutableStateOf<Pair<String, String>?>(null) }
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -68,9 +71,9 @@ fun AdminSystemScreen(onBack: () -> Unit = {}, onDashboard: () -> Unit = {}) {
         loading = true
         message = null
         runCatching {
-            sync = repository.syncIssues()
-            errors = repository.systemErrors()
-            audits = repository.auditLogs()
+            sync = repository.syncIssues(selectedYear, selectedMonth, selectedDay)
+            errors = repository.systemErrors(selectedYear, selectedMonth, selectedDay)
+            audits = repository.auditLogs(selectedYear, selectedMonth, selectedDay)
         }.onFailure { message = AuthRepository.userMessage(it) }
         loading = false
     }
@@ -101,6 +104,12 @@ fun AdminSystemScreen(onBack: () -> Unit = {}, onDashboard: () -> Unit = {}) {
                 )
             }
         }
+        AdminDateFilter(selectedYear, selectedMonth, selectedDay, { year, month, day ->
+            selectedYear = year
+            selectedMonth = month
+            selectedDay = day
+            refreshKey++
+        }, enabled = !loading && profile.role == "ADMIN")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
                 when (selectedTab) {

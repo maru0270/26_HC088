@@ -46,12 +46,13 @@ object NetworkModule {
                 val authenticatedClient = plainClient.newBuilder()
                     .addInterceptor { chain ->
                         val token = AuthSessionStore(context).accessToken()
-                        val request = if (token.isNullOrBlank()) chain.request() else {
-                            chain.request().newBuilder()
-                                .header("Authorization", "Bearer $token")
-                                .build()
+                        val requestBuilder = chain.request().newBuilder()
+                            // 무료 ngrok 주소에서는 이 헤더가 없으면 API JSON 대신 안내 HTML을 반환한다.
+                            .header("ngrok-skip-browser-warning", "1")
+                        if (!token.isNullOrBlank()) {
+                            requestBuilder.header("Authorization", "Bearer $token")
                         }
-                        chain.proceed(request)
+                        chain.proceed(requestBuilder.build())
                     }
                     .build()
                 cachedApi = Retrofit.Builder()
@@ -80,7 +81,11 @@ object NetworkModule {
     suspend fun testConnection(inputUrl: String): Result<Long> = withContext(Dispatchers.IO) {
         runCatching {
             val baseUrl = UserSettingsStore.normalizeServerBaseUrl(inputUrl)
-            val request = Request.Builder().url(baseUrl + "docs").get().build()
+            val request = Request.Builder()
+                .url(baseUrl + "docs")
+                .header("ngrok-skip-browser-warning", "1")
+                .get()
+                .build()
             val startedAt = System.currentTimeMillis()
             plainClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) error("HTTP ${response.code}")
@@ -230,9 +235,21 @@ object NetworkModule {
             status: String,
             year: Int?,
             month: Int?,
+            day: Int?,
             limit: Int,
             offset: Int
-        ) = currentAuthApi(context).adminRides(query, status, year, month, limit, offset)
+        ) = currentAuthApi(context).adminRides(query, status, year, month, day, limit, offset)
+        override suspend fun adminAccidents(
+            query: String,
+            responseStatus: String,
+            year: Int?,
+            month: Int?,
+            day: Int?,
+            limit: Int,
+            offset: Int
+        ) = currentAuthApi(context).adminAccidents(
+            query, responseStatus, year, month, day, limit, offset
+        )
         override suspend fun adminRideDetail(rideSessionId: String) =
             currentAuthApi(context).adminRideDetail(rideSessionId)
         override suspend fun adminSensorImage(eventUuid: String) =
@@ -242,11 +259,15 @@ object NetworkModule {
             status: String,
             severity: String,
             zoneCategory: String,
+            damageType: String,
+            year: Int?,
+            month: Int?,
+            day: Int?,
             includeTestData: Boolean,
             limit: Int,
             offset: Int
         ) = currentAuthApi(context).adminHazardZones(
-            query, status, severity, zoneCategory, includeTestData, limit, offset
+            query, status, severity, zoneCategory, damageType, year, month, day, includeTestData, limit, offset
         )
         override suspend fun adminHazardZoneDetail(zoneId: String) =
             currentAuthApi(context).adminHazardZoneDetail(zoneId)
@@ -254,8 +275,8 @@ object NetworkModule {
             zoneId: String,
             request: HazardZoneStatusUpdateRequest
         ) = currentAuthApi(context).updateAdminHazardZoneStatus(zoneId, request)
-        override suspend fun adminReviewItems(status: String, limit: Int, offset: Int) =
-            currentAuthApi(context).adminReviewItems(status, limit, offset)
+        override suspend fun adminReviewItems(status: String, year: Int?, month: Int?, day: Int?, limit: Int, offset: Int) =
+            currentAuthApi(context).adminReviewItems(status, year, month, day, limit, offset)
         override suspend fun adminReviewItemDetail(reviewItemId: Long) =
             currentAuthApi(context).adminReviewItemDetail(reviewItemId)
         override suspend fun adminReviewItemImage(reviewItemId: Long) =
@@ -266,12 +287,12 @@ object NetworkModule {
         ) = currentAuthApi(context).registerReviewItem(reviewItemId, request)
         override suspend fun dismissReviewItem(reviewItemId: Long) =
             currentAuthApi(context).dismissReviewItem(reviewItemId)
-        override suspend fun auditLogs(limit: Int, offset: Int) =
-            currentAuthApi(context).auditLogs(limit, offset)
-        override suspend fun syncIssues(limit: Int) =
-            currentAuthApi(context).syncIssues(limit)
-        override suspend fun systemErrors(limit: Int) =
-            currentAuthApi(context).systemErrors(limit)
+        override suspend fun auditLogs(year: Int?, month: Int?, day: Int?, limit: Int, offset: Int) =
+            currentAuthApi(context).auditLogs(year, month, day, limit, offset)
+        override suspend fun syncIssues(year: Int?, month: Int?, day: Int?, limit: Int) =
+            currentAuthApi(context).syncIssues(year, month, day, limit)
+        override suspend fun systemErrors(year: Int?, month: Int?, day: Int?, limit: Int) =
+            currentAuthApi(context).systemErrors(year, month, day, limit)
         override suspend fun adminOperations() =
             currentAuthApi(context).adminOperations()
         override suspend fun backupStatus() =

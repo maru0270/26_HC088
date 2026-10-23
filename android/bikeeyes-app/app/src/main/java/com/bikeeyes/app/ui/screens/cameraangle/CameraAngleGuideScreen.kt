@@ -1,11 +1,17 @@
 package com.bikeeyes.app.ui.screens.cameraangle
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.SystemClock
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -36,10 +42,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import com.bikeeyes.app.CameraMountAngleConfig
 import com.bikeeyes.app.ui.components.BikeEyesOutlinedButton
 import com.bikeeyes.app.ui.components.BikeEyesPrimaryButton
@@ -215,19 +225,84 @@ private fun CameraGuideMessageCard(ready: Boolean) {
 
 @Composable
 private fun CameraPreviewStatus(pitch: Double, roll: Double, ready: Boolean) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val cameraPermissionGranted = remember(context) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+    var previewView by remember { mutableStateOf<PreviewView?>(null) }
+    var previewReady by remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner, previewView, cameraPermissionGranted) {
+        val view = previewView
+        if (!cameraPermissionGranted || view == null) {
+            onDispose { }
+        } else {
+            val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+            var cameraProvider: ProcessCameraProvider? = null
+            var preview: Preview? = null
+            var disposed = false
+            cameraProviderFuture.addListener({
+                if (!disposed) {
+                    try {
+                        val provider = cameraProviderFuture.get()
+                        val createdPreview = Preview.Builder().build().also {
+                            it.setSurfaceProvider(view.surfaceProvider)
+                        }
+                        cameraProvider = provider
+                        preview = createdPreview
+                        provider.unbind(createdPreview)
+                        provider.bindToLifecycle(
+                            lifecycleOwner,
+                            CameraSelector.DEFAULT_BACK_CAMERA,
+                            createdPreview
+                        )
+                        previewReady = true
+                    } catch (_: Exception) {
+                        previewReady = false
+                    }
+                }
+            }, ContextCompat.getMainExecutor(context))
+            onDispose {
+                disposed = true
+                preview?.let { cameraProvider?.unbind(it) }
+            }
+        }
+    }
+
     Box(
         Modifier.fillMaxWidth().height(300.dp)
-            .background(Color(0xFF1E2937), RoundedCornerShape(16.dp)).padding(20.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFF1E2937))
     ) {
+        if (cameraPermissionGranted) {
+            AndroidView(
+                factory = {
+                    PreviewView(it).apply {
+                        scaleType = PreviewView.ScaleType.FILL_CENTER
+                        previewView = this
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        if (!cameraPermissionGranted || !previewReady) {
+            Text(
+                if (cameraPermissionGranted) "카메라 화면을 준비하는 중입니다." else "카메라 권한이 필요합니다.",
+                color = Color.White,
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
         Text(
             if (ready) "정렬 상태: 정상" else "정렬 상태: 조정 필요",
             color = Color.White,
-            modifier = Modifier.align(Alignment.TopCenter)
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 20.dp)
         )
         Text(
             String.format(Locale.US, "피치 %.1f°  ·  롤 %.1f°", pitch, roll),
             color = Color.White,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp)
         )
         Box(Modifier.align(Alignment.Center).fillMaxWidth().height(2.dp).background(BikeEyesGreen))
         Box(Modifier.align(Alignment.Center).width(2.dp).height(220.dp).background(BikeEyesGreen))

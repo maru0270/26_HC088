@@ -71,6 +71,9 @@ fun AdminReviewItemsScreen() {
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var refreshKey by remember { mutableIntStateOf(0) }
+    var selectedYear by remember { mutableStateOf<Int?>(null) }
+    var selectedMonth by remember { mutableStateOf<Int?>(null) }
+    var selectedDay by remember { mutableStateOf<Int?>(null) }
     var currentIndex by remember { mutableIntStateOf(0) }
     var selections by remember { mutableStateOf<Map<Long, Set<String>>>(emptyMap()) }
     var successDialogMessage by remember { mutableStateOf<String?>(null) }
@@ -91,7 +94,7 @@ fun AdminReviewItemsScreen() {
     LaunchedEffect(refreshKey) {
         loading = true
         message = null
-        runCatching { repository.adminReviewItems() }
+        runCatching { repository.adminReviewItems(year = selectedYear, month = selectedMonth, day = selectedDay) }
             .onSuccess {
                 response = it
                 currentIndex = currentIndex.coerceAtMost((it.items.size - 1).coerceAtLeast(0))
@@ -113,6 +116,12 @@ fun AdminReviewItemsScreen() {
             Text("재검토 항목 관리", style = MaterialTheme.typography.headlineSmall)
             Text("AI 미탐지 의심 이미지와 센서 근거를 검토합니다.")
         }
+        AdminDateFilter(selectedYear, selectedMonth, selectedDay, { year, month, day ->
+            selectedYear = year
+            selectedMonth = month
+            selectedDay = day
+            refreshKey++
+        }, enabled = !loading)
         Text("검토 대기 ${response?.pending_count ?: 0}건", color = MaterialTheme.colorScheme.primary)
         if (loading) CircularProgressIndicator()
         message?.let { Text(it, color = MaterialTheme.colorScheme.error) }

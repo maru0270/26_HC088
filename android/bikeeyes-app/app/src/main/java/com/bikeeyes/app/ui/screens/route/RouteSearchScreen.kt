@@ -1,5 +1,10 @@
 package com.bikeeyes.app.ui.screens.route
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.scrollBy
@@ -22,7 +27,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -36,19 +44,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bikeeyes.app.KakaoPlaceItem
 import com.bikeeyes.app.BikeEyesLocalDatabase
+import com.bikeeyes.app.BicycleRouteResponse
 import com.bikeeyes.app.NavigationRouteState
 import com.bikeeyes.app.NetworkModule
 import com.bikeeyes.app.RiskAwareRoutePlanner
+import com.bikeeyes.app.RouteRiskAnalysis
 import com.bikeeyes.app.ui.components.BikeEyesPrimaryButton
-import com.bikeeyes.app.ui.components.BikeEyesRouteOptionChip
 import com.bikeeyes.app.ui.components.BikeEyesKakaoMap
 import com.bikeeyes.app.ui.components.BikeEyesMapMarker
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 import java.io.IOException
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun RouteSearchScreen(
     onBackClick: () -> Unit = {},
@@ -57,8 +69,6 @@ fun RouteSearchScreen(
     var startLocation by remember { mutableStateOf("") }
     var currentLocationName by remember { mutableStateOf("현재 위치를 확인하는 중입니다") }
     var destination by remember { mutableStateOf("") }
-    var selectedRouteType by remember { mutableStateOf("BICYCLE") }
-    var selectedOption by remember { mutableStateOf("") }
     var selectedStartLocation by remember { mutableStateOf<KakaoPlaceItem?>(null) }
     var selectedDestination by remember { mutableStateOf<KakaoPlaceItem?>(null) }
     var startSuggestions by remember { mutableStateOf<List<KakaoPlaceItem>>(emptyList()) }
@@ -71,6 +81,7 @@ fun RouteSearchScreen(
     var currentLongitude by remember { mutableStateOf<Double?>(null) }
     var routeLoading by remember { mutableStateOf(false) }
     var routeError by remember { mutableStateOf<String?>(null) }
+    var pendingRouteRequest by remember { mutableStateOf<PendingRouteRequest?>(null) }
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
@@ -254,49 +265,6 @@ fun RouteSearchScreen(
         run {
             Spacer(modifier = Modifier.height(10.dp))
 
-            RouteTypeSection(
-                selectedRouteType = selectedRouteType,
-                onRouteTypeSelected = { routeType ->
-                    selectedRouteType = routeType
-                    selectedOption =
-                        if (routeType == "WALKING_BIKE") "넓은 길 우선"
-                        else ""
-                    routeError = null
-                    NavigationRouteState.clear()
-                }
-            )
-
-            if (selectedRouteType == "WALKING_BIKE") {
-                Spacer(modifier = Modifier.height(8.dp))
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = androidx.compose.ui.graphics.Color(0xFFFFF4E5)
-                ) {
-                    Text(
-                        text = "보행로·계단·자전거 통행 제한 구간을 포함할 수 있습니다. " +
-                            "통행이 허용되지 않은 구간에서는 자전거에서 내려 이동하세요.",
-                        modifier = Modifier.padding(12.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = androidx.compose.ui.graphics.Color(0xFF9A5A00)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            RouteOptionSection(
-                selectedRouteType = selectedRouteType,
-                selectedOption = selectedOption,
-                onOptionSelected = {
-                    selectedOption = it
-                    routeError = null
-                    NavigationRouteState.clear()
-                }
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -386,56 +354,12 @@ fun RouteSearchScreen(
                                             size = 15
                                         ).places.firstOrNull()
                                         ?: error("destination not found")
-                                    val api = NetworkModule.dynamicSensorApi(context)
-                                    val routeMode = routeModeFor(selectedRouteType, selectedOption)
-                                    val riskPlan = if (
-                                        selectedRouteType == "BICYCLE" &&
-                                        selectedOption == "위험 회피"
-                                    ) {
-                                        RiskAwareRoutePlanner.plan(
-                                            api = api,
-                                            riskZoneDao = BikeEyesLocalDatabase
-                                                .getInstance(context)
-                                                .riskZoneDao(),
-                                            startLongitude = startLon,
-                                            startLatitude = startLat,
-                                            endLongitude = target.longitude,
-                                            endLatitude = target.latitude,
-                                            destinationName = target.name
-                                        )
-                                    } else {
-                                        null
-                                    }
-                                    val route = riskPlan?.route ?: if (selectedRouteType == "WALKING_BIKE") {
-                                        api.getWalkingBikeRoute(
-                                            startLongitude = startLon,
-                                            startLatitude = startLat,
-                                            endLongitude = target.longitude,
-                                            endLatitude = target.latitude,
-                                            destinationName = target.name,
-                                            routeMode = routeMode
-                                        )
-                                    } else {
-                                        api.getBicycleRoute(
-                                            startLongitude = startLon,
-                                            startLatitude = startLat,
-                                            endLongitude = target.longitude,
-                                            endLatitude = target.latitude,
-                                            destinationName = target.name,
-                                            routeMode = routeMode
-                                        )
-                                    }
-                                    Triple(route, target, riskPlan)
-                                }.onSuccess { (route, target, riskPlan) ->
+                                    PendingRouteRequest(startLat, startLon, target)
+                                }.onSuccess { request ->
+                                    val target = request.destination
                                     selectedDestination = target
                                     destination = target.name
-                                    NavigationRouteState.set(
-                                        destination = target,
-                                        route = route,
-                                        strategy = if (riskPlan != null) "RISK_AVOID" else "STANDARD",
-                                        riskAnalysis = riskPlan?.analysis
-                                    )
-                                    onStartNavigationClick()
+                                    pendingRouteRequest = request
                                 }.onFailure { error ->
                                     routeError = routeSearchErrorMessage(error)
                                 }
@@ -447,31 +371,278 @@ fun RouteSearchScreen(
             )
         }
     }
+
+    pendingRouteRequest?.let { request ->
+        ModalBottomSheet(onDismissRequest = { pendingRouteRequest = null }) {
+            RouteChoiceBottomSheet(
+                request = request,
+                onRouteSelected = { candidate ->
+                    val route = candidate.route ?: return@RouteChoiceBottomSheet
+                    NavigationRouteState.set(
+                        destination = request.destination,
+                        route = route,
+                        strategy = if (candidate.riskAnalysis != null) "RISK_AVOID" else "STANDARD",
+                        riskAnalysis = candidate.riskAnalysis
+                    )
+                    pendingRouteRequest = null
+                    onStartNavigationClick()
+                }
+            )
+        }
+    }
+}
+
+private data class PendingRouteRequest(
+    val startLatitude: Double,
+    val startLongitude: Double,
+    val destination: KakaoPlaceItem
+)
+
+private enum class RouteChoiceStep { TYPE, OPTION }
+
+private data class RouteOptionDefinition(
+    val label: String,
+    val routeMode: String,
+    val isRiskAvoidance: Boolean = false
+)
+
+private data class RouteOptionCandidate(
+    val definition: RouteOptionDefinition,
+    val route: BicycleRouteResponse? = null,
+    val riskAnalysis: RouteRiskAnalysis? = null,
+    val error: String? = null
+)
+
+private suspend fun loadRouteCandidates(
+    context: android.content.Context,
+    request: PendingRouteRequest,
+    routeType: String
+): List<RouteOptionCandidate> = coroutineScope {
+    val api = NetworkModule.dynamicSensorApi(context)
+    val definitions = if (routeType == "WALKING_BIKE") {
+        listOf(
+            RouteOptionDefinition("넓은 길 우선", "BROAD_FIRST"),
+            RouteOptionDefinition("최단거리", "SHORTEST"),
+            RouteOptionDefinition("평지 우선", "ACCESSIBLE")
+        )
+    } else {
+        listOf(
+            RouteOptionDefinition("최단거리", "SHORTEST"),
+            RouteOptionDefinition("평지 우선", "ACCESSIBLE"),
+            RouteOptionDefinition("위험 회피", "BIKE_ONLY", isRiskAvoidance = true)
+        )
+    }
+
+    definitions.map { definition ->
+        async {
+            runCatching {
+                val riskPlan = if (definition.isRiskAvoidance) {
+                    RiskAwareRoutePlanner.plan(
+                        api = api,
+                        riskZoneDao = BikeEyesLocalDatabase.getInstance(context).riskZoneDao(),
+                        startLongitude = request.startLongitude,
+                        startLatitude = request.startLatitude,
+                        endLongitude = request.destination.longitude,
+                        endLatitude = request.destination.latitude,
+                        destinationName = request.destination.name
+                    )
+                } else {
+                    null
+                }
+                val route = riskPlan?.route ?: if (routeType == "WALKING_BIKE") {
+                    api.getWalkingBikeRoute(
+                        startLongitude = request.startLongitude,
+                        startLatitude = request.startLatitude,
+                        endLongitude = request.destination.longitude,
+                        endLatitude = request.destination.latitude,
+                        destinationName = request.destination.name,
+                        routeMode = definition.routeMode
+                    )
+                } else {
+                    api.getBicycleRoute(
+                        startLongitude = request.startLongitude,
+                        startLatitude = request.startLatitude,
+                        endLongitude = request.destination.longitude,
+                        endLatitude = request.destination.latitude,
+                        destinationName = request.destination.name,
+                        routeMode = definition.routeMode
+                    )
+                }
+                RouteOptionCandidate(
+                    definition = definition,
+                    route = route,
+                    riskAnalysis = riskPlan?.analysis
+                )
+            }.getOrElse { error ->
+                RouteOptionCandidate(definition = definition, error = routeSearchErrorMessage(error))
+            }
+        }
+    }.awaitAll()
 }
 
 @Composable
-private fun RouteTypeSection(
-    selectedRouteType: String,
-    onRouteTypeSelected: (String) -> Unit
+private fun RouteChoiceBottomSheet(
+    request: PendingRouteRequest,
+    onRouteSelected: (RouteOptionCandidate) -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("경로 유형", fontWeight = FontWeight.SemiBold)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            BikeEyesRouteOptionChip(
-                text = "자전거도로 우선",
-                selected = selectedRouteType == "BICYCLE",
-                modifier = Modifier.weight(1f),
-                onClick = { onRouteTypeSelected("BICYCLE") }
+    val context = LocalContext.current
+    var step by remember(request) { mutableStateOf(RouteChoiceStep.TYPE) }
+    var routeType by remember(request) { mutableStateOf("BICYCLE") }
+    var loading by remember { mutableStateOf(false) }
+    var candidates by remember { mutableStateOf<List<RouteOptionCandidate>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(step, routeType, request) {
+        if (step != RouteChoiceStep.OPTION) return@LaunchedEffect
+        loading = true
+        error = null
+        candidates = emptyList()
+        runCatching { loadRouteCandidates(context, request, routeType) }
+            .onSuccess { candidates = it }
+            .onFailure { error = routeSearchErrorMessage(it) }
+        loading = false
+    }
+
+    AnimatedContent(
+        targetState = step,
+        transitionSpec = {
+            slideInHorizontally(animationSpec = tween(260)) { it } togetherWith
+                slideOutHorizontally(animationSpec = tween(260)) { -it }
+        },
+        label = "route-choice-step"
+    ) { currentStep ->
+        when (currentStep) {
+            RouteChoiceStep.TYPE -> RouteTypeChoices(
+                destinationName = request.destination.name,
+                onTypeSelected = {
+                    routeType = it
+                    step = RouteChoiceStep.OPTION
+                }
             )
-            BikeEyesRouteOptionChip(
-                text = "보행로 포함",
-                selected = selectedRouteType == "WALKING_BIKE",
-                modifier = Modifier.weight(1f),
-                onClick = { onRouteTypeSelected("WALKING_BIKE") }
+            RouteChoiceStep.OPTION -> RouteOptionChoices(
+                routeType = routeType,
+                candidates = candidates,
+                loading = loading,
+                error = error,
+                onBack = { step = RouteChoiceStep.TYPE },
+                onRouteSelected = onRouteSelected
             )
+        }
+    }
+}
+
+@Composable
+private fun RouteTypeChoices(destinationName: String, onTypeSelected: (String) -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text("경로 유형 선택", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("${destinationName}까지 이동할 경로 유형을 선택하세요.", style = MaterialTheme.typography.bodyMedium)
+        RouteTypeChoiceCard(
+            title = "자전거도로 우선",
+            description = "자전거 주행에 적합한 경로를 우선으로 비교합니다.",
+            onClick = { onTypeSelected("BICYCLE") }
+        )
+        RouteTypeChoiceCard(
+            title = "일반도로 포함",
+            description = "일반도로·보행로 등을 포함한 이동 가능 경로를 비교합니다.",
+            onClick = { onTypeSelected("WALKING_BIKE") }
+        )
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun RouteTypeChoiceCard(title: String, description: String, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer
+    ) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(description, style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun RouteOptionChoices(
+    routeType: String,
+    candidates: List<RouteOptionCandidate>,
+    loading: Boolean,
+    error: String?,
+    onBack: () -> Unit,
+    onRouteSelected: (RouteOptionCandidate) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            if (routeType == "BICYCLE") "자전거도로 우선 경로" else "일반도로 포함 경로",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Text("옵션별 거리와 예상 시간을 비교한 뒤 하나를 선택하세요.", style = MaterialTheme.typography.bodySmall)
+        if (routeType == "WALKING_BIKE") {
+            Text(
+                "일반도로에서는 도로 구조·속도 차이로 노면 위험요소 객체 탐지 결과가 정확하지 않거나 일부 누락될 수 있습니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = androidx.compose.ui.graphics.Color(0xFF9A5A00)
+            )
+        }
+        if (loading) {
+            CircularProgressIndicator()
+            Text("옵션별 경로를 계산하는 중입니다.")
+        }
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        candidates.forEach { candidate ->
+            key(candidate.definition.routeMode, candidate.route?.route_mode, candidate.error) {
+                RouteOptionCandidateCard(candidate, onRouteSelected)
+            }
+        }
+        Text(
+            "‹ 경로 유형 다시 선택",
+            modifier = Modifier.clickable(onClick = onBack).padding(vertical = 12.dp),
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.SemiBold
+        )
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun RouteOptionCandidateCard(
+    candidate: RouteOptionCandidate,
+    onRouteSelected: (RouteOptionCandidate) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().clickable(enabled = candidate.route != null) {
+            onRouteSelected(candidate)
+        },
+        shape = RoundedCornerShape(16.dp),
+        color = if (candidate.route != null) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(candidate.definition.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            val route = candidate.route
+            if (route != null) {
+                Text(
+                    "${formatDistance(route.total_distance_meters)} · ${formatRouteDuration(route.total_duration_seconds)}",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                candidate.riskAnalysis?.takeUnless { it.fallbackUsed }?.let { analysis ->
+                    Text(
+                        "위험구간 ${analysis.intersectingZoneCount}곳 · 위험 점수 ${String.format("%.1f", analysis.riskScore)}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            } else {
+                Text(candidate.error ?: "경로를 계산하지 못했습니다.", color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }
@@ -519,40 +690,6 @@ private fun PlaceSuggestionList(
 }
 
 @Composable
-private fun RouteOptionSection(
-    selectedRouteType: String,
-    selectedOption: String,
-    onOptionSelected: (String) -> Unit
-) {
-    val options = if (selectedRouteType == "WALKING_BIKE") {
-        listOf("넓은 길 우선", "최단거리", "평지 우선")
-    } else {
-        listOf("최단거리", "평지 우선", "위험 회피")
-    }
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        options.chunked(2).forEach { rowOptions ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                rowOptions.forEach { option ->
-                    BikeEyesRouteOptionChip(
-                        text = option,
-                        selected = selectedOption == option,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onOptionSelected(option) }
-                    )
-                }
-                if (rowOptions.size == 1) Spacer(modifier = Modifier.weight(1f))
-            }
-        }
-    }
-}
-
-@Composable
 private fun RouteMap(
     modifier: Modifier = Modifier,
     selectedStartLocation: KakaoPlaceItem?,
@@ -586,18 +723,21 @@ private fun RouteMap(
     )
 }
 
-private fun routeModeFor(routeType: String, option: String): String = when (option) {
-    "최단거리" -> "SHORTEST"
-    "평지 우선" -> "ACCESSIBLE"
-    else -> if (routeType == "WALKING_BIKE") "BROAD_FIRST" else "BIKE_ONLY"
-}
-
 private fun formatDistance(distanceMeters: Int): String =
     if (distanceMeters < 1_000) {
         "${distanceMeters}m"
     } else {
         String.format(java.util.Locale.KOREA, "%.1fkm", distanceMeters / 1_000.0)
     }
+
+private fun formatRouteDuration(durationSeconds: Int): String {
+    val minutes = (durationSeconds / 60).coerceAtLeast(1)
+    return if (minutes < 60) {
+        "약 ${minutes}분"
+    } else {
+        "약 ${minutes / 60}시간 ${minutes % 60}분"
+    }
+}
 
 private fun placeSearchErrorMessage(error: Throwable): String = when {
     error is IOException ->

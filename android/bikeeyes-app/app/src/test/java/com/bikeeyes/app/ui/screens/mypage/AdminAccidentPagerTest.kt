@@ -67,7 +67,7 @@ class AdminAccidentPagerTest {
 
     @Test
     fun `legacy and lower case responses have consistent filtering and labels`() {
-        assertEquals("괜찮아요 · 오탐", event("a", status = "cancelled").responseLabel())
+        assertEquals("괜찮아요", event("a", status = "cancelled").responseLabel())
         assertEquals("사고입니다", event("b", status = "emergency").responseLabel())
         assertEquals("30초 무응답", event("c", status = "unresponded").responseLabel())
         assertFalse(event("c", status = "unresponded").isSafeResponse())
